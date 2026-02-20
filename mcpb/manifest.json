@@ -1,0 +1,25 @@
+{
+  "manifest_version": "0.3",
+  "name": "che-zotero-mcp",
+  "version": "1.0.0",
+  "description": "Connect your Zotero research library with AI assistants. Search your library, explore external academic literature (OpenAlex 250M+ papers), track citation networks, and use semantic search — all local on Apple Silicon.",
+  "author": {
+    "name": "Che Cheng"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/kiki830621/che-zotero-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kiki830621/che-zotero-mcp"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/CheZoteroMCP",
+    "mcp_config": {
+      "command": "$DIRNAME/server/CheZoteroMCP",
+      "args": [],
+      "env": {}
+    }
+  },
+  "keywords": ["zotero", "research", "literature", "semantic-search", "mlx", "embeddings", "openalex", "citations", "academic"]
+}
