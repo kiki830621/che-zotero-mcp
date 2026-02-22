@@ -4,3 +4,7 @@ Package.resolved
 *.xcodeproj
 *.xcworkspace
 DerivedData/
+
+# Build artifacts (distributed via GitHub Release)
+mcpb/server/*
+!mcpb/server/.gitkeep
