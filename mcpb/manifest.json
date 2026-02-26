@@ -1,8 +1,8 @@
 {
   "manifest_version": "0.3",
   "name": "che-zotero-mcp",
-  "version": "1.1.0",
-  "description": "Connect your Zotero research library with AI assistants. Search your library, explore external academic literature (OpenAlex 250M+ papers), track citation networks, and use semantic search — all local on Apple Silicon.",
+  "version": "1.2.0",
+  "description": "Connect your Zotero research library with AI assistants. Search your library, explore external academic literature (OpenAlex 250M+ papers), track citation networks, import publications via ORCID, and use semantic search — all local on Apple Silicon.",
   "author": {
     "name": "Che Cheng"
   },
@@ -21,5 +21,5 @@
       "env": {}
     }
   },
-  "keywords": ["zotero", "research", "literature", "semantic-search", "mlx", "embeddings", "openalex", "citations", "academic"]
+  "keywords": ["zotero", "research", "literature", "semantic-search", "mlx", "embeddings", "openalex", "citations", "academic", "orcid", "doi"]
 }

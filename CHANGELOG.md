@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.2.0] - 2026-02-26
+
+### Added
+- **ORCID integration** — new ORCID Public API client (`OrcidClient.swift`):
+  - `orcid_get_publications` — fetch public publications from any ORCID ID
+- **Multi-source publication import** — batch import to Zotero from multiple sources:
+  - `import_publications_to_zotero` — import from ORCID, OpenAlex ORCID, or manual DOI list
+  - Supports dry-run preview, skip-existing dedup, collection assignment, and tagging
+- **Universal DOI resolver** — cascading metadata resolution (`DOIResolver.swift`):
+  - OpenAlex → doi.org content negotiation → Airiti DOI
+  - Covers all 12 global DOI Registration Agencies (Crossref, DataCite, mEDRA, Airiti, JaLC, KISTI, etc.)
+  - CSL-JSON parser handles Western and CJK author name formats
+- `OrcidClient.swift` — ORCID Public API v3.0 client (free, no auth)
+- `DOIResolver.swift` — universal DOI metadata resolver with cascading fallback
+- `AcademicSearchClient.getWorksByOrcid()` — OpenAlex author search by ORCID ID
+
+### Changed
+- Version bump: 1.1.0 → 1.2.0
+- `zotero_add_item_by_doi` now uses DOIResolver (supports Airiti and all DOI RAs, not just OpenAlex)
+- Tool count: 21 → 23 (19 read + 4 write when API key is set)
+
+### Fixed
+- N/A
+
 ## [1.1.0] - 2026-02-24
 
 ### Added

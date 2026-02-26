@@ -31,6 +31,8 @@ Inspired by [54yyyu/zotero-mcp](https://github.com/54yyyu/zotero-mcp) (Python), 
 - **Keyword search** — search by title, creator, tags via Zotero's local SQLite
 - **Semantic search** — find papers by meaning using MLX embeddings (local, no API key)
 - **Academic search** — search external literature, get paper metadata, track citations (OpenAlex)
+- **ORCID import** — fetch publications from ORCID, batch import to Zotero with dedup
+- **Universal DOI resolution** — cascading resolver covering all 12 DOI Registration Agencies
 - **Write operations** — create collections, add items by DOI, manage library (Zotero Web API)
 - **Notes & annotations** — read item notes and PDF highlights/comments
 - **Metadata retrieval** — get full bibliographic info, DOI lookup, attachment paths
@@ -86,7 +88,7 @@ claude mcp add --scope user --transport stdio -e ZOTERO_API_KEY=your_key che-zot
 
 Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable library read/write access)
 
-## Tools (21)
+## Tools (23)
 
 ### Zotero Library — Read (12)
 
@@ -123,6 +125,59 @@ Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable lib
 | `academic_get_citations` | Forward citation tracking |
 | `academic_get_references` | Backward reference tracking |
 | `academic_search_author` | Search papers by author name |
+
+### Publication Import (2)
+
+| Tool | Description |
+|------|-------------|
+| `orcid_get_publications` | Fetch public publications from an ORCID ID |
+| `import_publications_to_zotero` | Batch import from ORCID, OpenAlex, or DOI list (dry-run supported) |
+
+DOI resolution uses cascading fallback: OpenAlex → doi.org content negotiation → Airiti DOI, covering all 12 global DOI Registration Agencies.
+
+## Data Sources
+
+Each tool connects to one of three data sources. Understanding this helps troubleshoot issues like `database is locked`.
+
+| Data Source | Connection | Requires | Failure Mode |
+|---|---|---|---|
+| **Local SQLite** | `~/Zotero/zotero.sqlite` (read-only) | Zotero installed | `database is locked` when Zotero is syncing/writing |
+| **Zotero Web API** | `api.zotero.org` | `ZOTERO_API_KEY` + internet | Network errors, auth failures |
+| **OpenAlex API** | `api.openalex.org` | Internet (no API key) | Network errors, rate limits |
+
+### Tools by data source
+
+| Tool | Source | Notes |
+|------|--------|-------|
+| `zotero_search` | Local SQLite | |
+| `zotero_get_metadata` | Local SQLite | |
+| `zotero_get_collections` | Local SQLite | |
+| `zotero_get_tags` | Local SQLite | |
+| `zotero_get_recent` | Local SQLite | |
+| `zotero_get_items_in_collection` | Local SQLite | |
+| `zotero_search_by_doi` | Local SQLite | |
+| `zotero_get_attachments` | Local SQLite | Returns local file paths |
+| `zotero_get_notes` | Local SQLite | |
+| `zotero_get_annotations` | Local SQLite | |
+| `zotero_semantic_search` | Local SQLite + in-memory index | Run `zotero_build_index` first |
+| `zotero_build_index` | Local SQLite → local embeddings | Uses MLX on Apple Silicon GPU |
+| `zotero_create_collection` | Zotero Web API | Requires `ZOTERO_API_KEY` |
+| `zotero_add_item_by_doi` | Zotero Web API + OpenAlex | Metadata from OpenAlex, writes via API |
+| `zotero_create_item` | Zotero Web API | Requires `ZOTERO_API_KEY` |
+| `zotero_add_to_collection` | Zotero Web API | Requires `ZOTERO_API_KEY` |
+| `academic_search` | OpenAlex API | 250M+ papers, free |
+| `academic_get_paper` | OpenAlex API | Lookup by DOI |
+| `academic_get_citations` | OpenAlex API | Forward citations |
+| `academic_get_references` | OpenAlex API | Backward references |
+| `academic_search_author` | OpenAlex API | Search by author name |
+| `orcid_get_publications` | ORCID API | Public publications |
+| `import_publications_to_zotero` | OpenAlex + Zotero Web API | Batch import with dedup |
+
+### Common issues
+
+- **`database is locked`** — Zotero desktop is actively writing to SQLite (e.g., syncing, importing). Wait for sync to complete, or briefly close Zotero.
+- **Write tools return auth error** — `ZOTERO_API_KEY` not set or expired. Get a new key at https://www.zotero.org/settings/keys/new.
+- **Local reads return empty** — MCP may have reconnected and lost the SQLite path. Run `/mcp` to reconnect.
 
 ## Requirements
 

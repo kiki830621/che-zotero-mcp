@@ -9,12 +9,16 @@ public class CheZoteroMCPServer {
     private let reader: ZoteroReader
     private let embeddings: EmbeddingManager
     private let academic: AcademicSearchClient
+    private let orcid: OrcidClient
+    private let doiResolver: DOIResolver
     private let webAPI: ZoteroWebAPI?
 
     public init() async throws {
         reader = try ZoteroReader()
         embeddings = EmbeddingManager()
         academic = AcademicSearchClient()
+        orcid = OrcidClient()
+        doiResolver = DOIResolver(academic: academic)
 
         // Try to initialize Web API (requires ZOTERO_API_KEY env var)
         webAPI = try? await ZoteroWebAPI.createFromEnvironment()
@@ -23,7 +27,7 @@ public class CheZoteroMCPServer {
 
         server = Server(
             name: "che-zotero-mcp",
-            version: "1.1.0",
+            version: "1.2.0",
             capabilities: .init(tools: .init())
         )
 
@@ -269,6 +273,63 @@ public class CheZoteroMCPServer {
                 ])
             ),
 
+            // --- ORCID / Publication Import (2) ---
+            Tool(
+                name: "orcid_get_publications",
+                description: "List publications from an ORCID profile (public data, no auth required). Returns the researcher's self-curated publication list with titles, years, DOIs, and journal names.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "orcid_id": .object([
+                            "type": .string("string"),
+                            "description": .string("ORCID ID (e.g. '0000-0003-3376-7833' or full URL)")
+                        ])
+                    ]),
+                    "required": .array([.string("orcid_id")])
+                ])
+            ),
+            Tool(
+                name: "import_publications_to_zotero",
+                description: "Import publications to Zotero from multiple sources. Sources: 'orcid' (authoritative, user-curated — recommended for 'my publications'), 'openalex_orcid' (broader discovery via OpenAlex, may include false positives from name disambiguation), 'dois' (manual DOI list). Uses OpenAlex to enrich metadata. Supports dry_run preview and skip_existing to avoid duplicates.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "source": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("orcid"), .string("openalex_orcid"), .string("dois")]),
+                            "description": .string("Import source: 'orcid' (user-curated, most accurate), 'openalex_orcid' (broader but may have false positives), 'dois' (manual DOI list)")
+                        ]),
+                        "orcid_id": .object([
+                            "type": .string("string"),
+                            "description": .string("ORCID ID — required for 'orcid' and 'openalex_orcid' sources")
+                        ]),
+                        "dois": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("string")]),
+                            "description": .string("List of DOIs — required for 'dois' source")
+                        ]),
+                        "collection_key": .object([
+                            "type": .string("string"),
+                            "description": .string("Collection key to add imported items to (optional)")
+                        ]),
+                        "tags": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("string")]),
+                            "description": .string("Tags to apply to imported items (optional)")
+                        ]),
+                        "dry_run": .object([
+                            "type": .string("boolean"),
+                            "description": .string("Preview only, don't actually create items (default: true)")
+                        ]),
+                        "skip_existing": .object([
+                            "type": .string("boolean"),
+                            "description": .string("Skip items already in Zotero library by DOI (default: true)")
+                        ])
+                    ]),
+                    "required": .array([.string("source")])
+                ])
+            ),
+
             // --- Notes & Annotations (2) ---
             Tool(
                 name: "zotero_get_notes",
@@ -474,6 +535,12 @@ public class CheZoteroMCPServer {
                 return try await handleAcademicGetReferences(params)
             case "academic_search_author":
                 return try await handleAcademicSearchAuthor(params)
+
+            // ORCID / Publication Import
+            case "orcid_get_publications":
+                return try await handleOrcidGetPublications(params)
+            case "import_publications_to_zotero":
+                return try await handleImportPublications(params)
 
             // Notes & Annotations
             case "zotero_get_notes":
@@ -730,6 +797,201 @@ public class CheZoteroMCPServer {
         return CallTool.Result(content: [.text(lines.joined(separator: "\n"))], isError: false)
     }
 
+    // MARK: - ORCID / Publication Import Handlers
+
+    private func handleOrcidGetPublications(_ params: CallTool.Parameters) async throws -> CallTool.Result {
+        let orcidId = params.arguments?["orcid_id"]?.stringValue ?? ""
+
+        let works = try await orcid.getPublications(orcidId: orcidId)
+
+        if works.isEmpty {
+            return CallTool.Result(
+                content: [.text("No public publications found for ORCID: \(orcidId)\nNote: Only works with 'public' visibility on ORCID are returned.")],
+                isError: false
+            )
+        }
+
+        var lines = ["ORCID publications for \(orcidId) (\(works.count)):"]
+        for (i, work) in works.enumerated() {
+            let year = work.publicationYear != nil ? "(\(work.publicationYear!))" : "(n.d.)"
+            let journal = work.journalTitle != nil ? " — \(work.journalTitle!)" : ""
+            let doi = work.doi != nil ? " doi:\(work.doi!)" : " (no DOI)"
+            let type = work.type ?? "unknown"
+            lines.append("\(i + 1). \(work.title) \(year)\(journal) [\(type)]\(doi)")
+        }
+        lines.append("\nNote: Only works with 'public' visibility on ORCID are listed. Use import_publications_to_zotero with source='orcid' to import these.")
+        return CallTool.Result(content: [.text(lines.joined(separator: "\n"))], isError: false)
+    }
+
+    private func handleImportPublications(_ params: CallTool.Parameters) async throws -> CallTool.Result {
+        let source = params.arguments?["source"]?.stringValue ?? ""
+        let orcidId = params.arguments?["orcid_id"]?.stringValue
+        let doisParam = extractStringArray(params.arguments?["dois"])
+        let collectionKey = params.arguments?["collection_key"]?.stringValue
+        let tags = extractStringArray(params.arguments?["tags"])
+        let dryRun = params.arguments?["dry_run"]?.boolValue ?? true
+        let skipExisting = params.arguments?["skip_existing"]?.boolValue ?? true
+
+        // Step 1: Collect DOIs from the chosen source
+        var dois: [String] = []
+        var sourceDescription: String = ""
+
+        switch source {
+        case "orcid":
+            guard let orcidId = orcidId, !orcidId.isEmpty else {
+                return CallTool.Result(content: [.text("orcid_id is required for source 'orcid'")], isError: true)
+            }
+            let works = try await orcid.getPublications(orcidId: orcidId)
+            dois = works.compactMap(\.doi)
+            sourceDescription = "ORCID \(orcidId) (\(works.count) works, \(dois.count) with DOI)"
+
+        case "openalex_orcid":
+            guard let orcidId = orcidId, !orcidId.isEmpty else {
+                return CallTool.Result(content: [.text("orcid_id is required for source 'openalex_orcid'")], isError: true)
+            }
+            let works = try await academic.getWorksByOrcid(orcid: orcidId)
+            dois = works.compactMap(\.cleanDOI).filter { !$0.isEmpty }
+            sourceDescription = "OpenAlex ORCID \(orcidId) (\(works.count) works, \(dois.count) with DOI)\n⚠️  OpenAlex may include false positives from author name disambiguation"
+
+        case "dois":
+            guard !doisParam.isEmpty else {
+                return CallTool.Result(content: [.text("dois array is required for source 'dois'")], isError: true)
+            }
+            dois = doisParam
+            sourceDescription = "Manual DOI list (\(dois.count) DOIs)"
+
+        default:
+            return CallTool.Result(content: [.text("Unknown source: '\(source)'. Use 'orcid', 'openalex_orcid', or 'dois'.")], isError: true)
+        }
+
+        if dois.isEmpty {
+            return CallTool.Result(content: [.text("No DOIs found from source: \(sourceDescription)")], isError: false)
+        }
+
+        // Deduplicate DOIs (some sources may have duplicates, e.g. preprint versions)
+        var seen = Set<String>()
+        dois = dois.filter { doi in
+            let normalized = doi.lowercased()
+                .replacingOccurrences(of: "https://doi.org/", with: "")
+                .replacingOccurrences(of: "http://doi.org/", with: "")
+            return seen.insert(normalized).inserted
+        }
+
+        // Step 2: Check which DOIs already exist in Zotero
+        var existingDOIs = Set<String>()
+        if skipExisting {
+            for doi in dois {
+                if let _ = try? reader.searchByDOI(doi: doi) {
+                    existingDOIs.insert(doi.lowercased()
+                        .replacingOccurrences(of: "https://doi.org/", with: "")
+                        .replacingOccurrences(of: "http://doi.org/", with: ""))
+                }
+            }
+        }
+
+        let newDOIs = dois.filter { doi in
+            let normalized = doi.lowercased()
+                .replacingOccurrences(of: "https://doi.org/", with: "")
+                .replacingOccurrences(of: "http://doi.org/", with: "")
+            return !existingDOIs.contains(normalized)
+        }
+
+        // Step 3: Build report
+        var lines: [String] = []
+        lines.append("Source: \(sourceDescription)")
+        lines.append("Total DOIs: \(dois.count)")
+        if skipExisting {
+            lines.append("Already in Zotero: \(existingDOIs.count) (will skip)")
+        }
+        lines.append("To import: \(newDOIs.count)")
+        lines.append("")
+
+        if dryRun {
+            // Dry run: just list what would be imported
+            lines.insert("=== DRY RUN (preview only) ===", at: 0)
+
+            if !existingDOIs.isEmpty {
+                lines.append("--- Already in Zotero (skipping) ---")
+                for doi in dois {
+                    let normalized = doi.lowercased()
+                        .replacingOccurrences(of: "https://doi.org/", with: "")
+                        .replacingOccurrences(of: "http://doi.org/", with: "")
+                    if existingDOIs.contains(normalized) {
+                        lines.append("  ✓ \(doi)")
+                    }
+                }
+                lines.append("")
+            }
+
+            if !newDOIs.isEmpty {
+                lines.append("--- Will import ---")
+                for (i, doi) in newDOIs.enumerated() {
+                    // Try to get metadata preview from OpenAlex
+                    if let work = try? await academic.getWork(doi: doi) {
+                        let authors = work.authorList.prefix(3).joined(separator: ", ")
+                        let etAl = (work.authorList.count > 3) ? " et al." : ""
+                        let year = work.publication_year != nil ? "(\(work.publication_year!))" : "(n.d.)"
+                        lines.append("  \(i + 1). \(work.display_name ?? work.title ?? "(untitled)") — \(authors)\(etAl) \(year)")
+                        lines.append("     DOI: \(doi)")
+                    } else {
+                        lines.append("  \(i + 1). DOI: \(doi) (metadata not found in OpenAlex)")
+                    }
+                }
+            }
+
+            if let ck = collectionKey {
+                lines.append("\nWill add to collection: \(ck)")
+            }
+            if !tags.isEmpty {
+                lines.append("Will apply tags: \(tags.joined(separator: ", "))")
+            }
+            lines.append("\nTo execute, call again with dry_run: false")
+            return CallTool.Result(content: [.text(lines.joined(separator: "\n"))], isError: false)
+        }
+
+        // Step 4: Actually import (dry_run == false)
+        guard webAPI != nil else {
+            return CallTool.Result(
+                content: [.text("Write operations require ZOTERO_API_KEY environment variable. Get your key at https://www.zotero.org/settings/keys/new")],
+                isError: true
+            )
+        }
+        let api = webAPI!
+
+        var imported = 0
+        var failed = 0
+        var results: [(doi: String, status: String)] = []
+        let collectionKeys = collectionKey != nil ? [collectionKey!] : []
+
+        for doi in newDOIs {
+            do {
+                let result = try await api.addItemByDOI(
+                    doi: doi,
+                    collectionKeys: collectionKeys,
+                    tags: tags,
+                    resolver: doiResolver
+                )
+                imported += 1
+                results.append((doi: doi, status: "✅ \(result.summary)"))
+            } catch {
+                failed += 1
+                results.append((doi: doi, status: "❌ \(error.localizedDescription)"))
+            }
+        }
+
+        lines.append("--- Import Results ---")
+        for r in results {
+            lines.append(r.status)
+        }
+        lines.append("")
+        lines.append("Imported: \(imported), Failed: \(failed), Skipped: \(existingDOIs.count)")
+        if imported > 0 {
+            lines.append("Note: Zotero desktop will sync on next cycle to reflect changes locally.")
+        }
+
+        return CallTool.Result(content: [.text(lines.joined(separator: "\n"))], isError: false)
+    }
+
     // MARK: - Notes & Annotations Handlers
 
     private func handleGetNotes(_ params: CallTool.Parameters) throws -> CallTool.Result {
@@ -814,7 +1076,7 @@ public class CheZoteroMCPServer {
             doi: doi,
             collectionKeys: collectionKeys,
             tags: tags,
-            academicClient: academic
+            resolver: doiResolver
         )
 
         var text = "Item added to Zotero: \(result.summary)"

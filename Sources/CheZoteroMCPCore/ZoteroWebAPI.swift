@@ -324,43 +324,29 @@ public class ZoteroWebAPI {
         tags: [String] = [],
         academicClient: AcademicSearchClient
     ) async throws -> (key: String, summary: String) {
-        guard let work = try await academicClient.getWork(doi: doi) else {
-            throw ZoteroWebAPIError.writeFailed("Paper not found in OpenAlex for DOI: \(doi)")
-        }
+        let resolver = DOIResolver(academic: academicClient)
+        return try await addItemByDOI(doi: doi, collectionKeys: collectionKeys, tags: tags, resolver: resolver)
+    }
 
-        // Build creators from OpenAlex authorships
-        let creators: [ZoteroAPICreator] = (work.authorships ?? []).compactMap { authorship in
-            guard let name = authorship.author?.display_name else { return nil }
-            let parts = name.split(separator: " ", maxSplits: 1)
-            if parts.count >= 2 {
-                return ZoteroAPICreator(
-                    firstName: String(parts[0]),
-                    lastName: String(parts[1])
-                )
-            } else {
-                return ZoteroAPICreator(firstName: nil, lastName: String(name))
-            }
-        }
+    /// Look up a DOI via the universal DOI resolver and create the item in Zotero.
+    /// Cascading resolution: OpenAlex → doi.org → Airiti
+    public func addItemByDOI(
+        doi: String,
+        collectionKeys: [String] = [],
+        tags: [String] = [],
+        resolver: DOIResolver
+    ) async throws -> (key: String, summary: String) {
+        let metadata = try await resolver.resolve(doi: doi)
+        let itemData = metadata.toZoteroItemData(collectionKeys: collectionKeys, tags: tags)
+        let result = try await createItem(itemData)
 
-        let result = try await createJournalArticle(
-            title: work.display_name ?? work.title ?? "(untitled)",
-            creators: creators,
-            abstractNote: work.abstractText,
-            publicationTitle: work.primary_location?.source?.display_name,
-            date: work.publication_date ?? (work.publication_year != nil ? "\(work.publication_year!)" : nil),
-            doi: work.cleanDOI,
-            url: work.primary_location?.landing_page_url,
-            volume: nil,
-            issue: nil,
-            pages: nil,
-            tags: tags,
-            collectionKeys: collectionKeys
-        )
-
-        let authorStr = work.authorList.prefix(3).joined(separator: ", ")
-        let etAl = (work.authorList.count > 3) ? " et al." : ""
-        let year = work.publication_year != nil ? " (\(work.publication_year!))" : ""
-        let summary = "\(work.display_name ?? "(untitled)") — \(authorStr)\(etAl)\(year) [key: \(result.key)]"
+        let authorStr = metadata.creators.prefix(3).map { c in
+            if let name = c.name { return name }
+            return [c.firstName, c.lastName].compactMap { $0 }.joined(separator: " ")
+        }.joined(separator: ", ")
+        let etAl = metadata.creators.count > 3 ? " et al." : ""
+        let dateStr = metadata.date != nil ? " (\(metadata.date!))" : ""
+        let summary = "\(metadata.title) — \(authorStr)\(etAl)\(dateStr) [key: \(result.key)] (via \(metadata.source))"
 
         return (key: result.key, summary: summary)
     }

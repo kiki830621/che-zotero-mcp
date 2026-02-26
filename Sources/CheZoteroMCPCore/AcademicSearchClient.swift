@@ -195,6 +195,28 @@ public class AcademicSearchClient {
         return response.results
     }
 
+    // MARK: - Search by ORCID
+
+    /// Get all works associated with an ORCID ID via OpenAlex.
+    /// Note: OpenAlex author disambiguation may include false positives for common names.
+    public func getWorksByOrcid(orcid: String, limit: Int = 50) async throws -> [OpenAlexWork] {
+        let cleanOrcid = orcid
+            .replacingOccurrences(of: "https://orcid.org/", with: "")
+            .replacingOccurrences(of: "http://orcid.org/", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var components = URLComponents(string: "\(baseURL)/works")!
+        components.queryItems = [
+            URLQueryItem(name: "filter", value: "author.orcid:\(cleanOrcid)"),
+            URLQueryItem(name: "per_page", value: String(min(limit, 200))),
+            URLQueryItem(name: "sort", value: "publication_year:desc"),
+        ]
+        addMailto(&components)
+
+        let response: OpenAlexResponse = try await fetch(url: components.url!)
+        return response.results
+    }
+
     // MARK: - Search by Author
 
     /// Search works by author name.
