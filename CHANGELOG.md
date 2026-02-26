@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.1] - 2026-02-26
+
+### Added
+- **Data Sources documentation** — new README section documenting which tools connect to Local SQLite vs Zotero Web API vs OpenAlex API, with failure modes and troubleshooting tips
+
+### Changed
+- Version bump: 1.2.0 → 1.2.1
+
+### Fixed
+- N/A
+
 ## [1.2.0] - 2026-02-26
 
 ### Added
