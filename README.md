@@ -88,7 +88,7 @@ claude mcp add --scope user --transport stdio -e ZOTERO_API_KEY=your_key che-zot
 
 Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable library read/write access)
 
-## Tools (23)
+## Tools (24)
 
 ### Zotero Library — Read (12)
 
@@ -107,14 +107,15 @@ Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable lib
 | `zotero_get_notes` | Get notes attached to an item (plain text) |
 | `zotero_get_annotations` | Get PDF annotations (highlights, comments) |
 
-### Zotero Library — Write (4, requires `ZOTERO_API_KEY`)
+### Zotero Library — Write (5, requires `ZOTERO_API_KEY`)
 
 | Tool | Description |
 |------|-------------|
-| `zotero_create_collection` | Create a new collection |
-| `zotero_add_item_by_doi` | Add paper by DOI (auto-fills from OpenAlex) |
-| `zotero_create_item` | Create item with explicit fields |
+| `zotero_create_collection` | Create a new collection (idempotent) |
+| `zotero_add_item_by_doi` | Add paper by DOI (auto-fills from OpenAlex, idempotent) |
+| `zotero_create_item` | Create item with explicit fields (idempotent if DOI provided) |
 | `zotero_add_to_collection` | Add existing item to a collection |
+| `zotero_delete_item` | Delete an item by key |
 
 ### Academic Search (5)
 
@@ -165,6 +166,7 @@ Each tool connects to one of three data sources. Understanding this helps troubl
 | `zotero_add_item_by_doi` | Zotero Web API + OpenAlex | Metadata from OpenAlex, writes via API |
 | `zotero_create_item` | Zotero Web API | Requires `ZOTERO_API_KEY` |
 | `zotero_add_to_collection` | Zotero Web API | Requires `ZOTERO_API_KEY` |
+| `zotero_delete_item` | Zotero Web API | Requires `ZOTERO_API_KEY` |
 | `academic_search` | OpenAlex API | 250M+ papers, free |
 | `academic_get_paper` | OpenAlex API | Lookup by DOI |
 | `academic_get_citations` | OpenAlex API | Forward citations |

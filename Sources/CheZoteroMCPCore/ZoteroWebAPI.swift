@@ -176,8 +176,13 @@ public class ZoteroWebAPI {
 
     // MARK: - Collections
 
-    /// Create a new collection.
-    public func createCollection(name: String, parentKey: String? = nil) async throws -> (key: String, version: Int) {
+    /// Create a new collection (idempotent: skips if same name exists at same level).
+    public func createCollection(name: String, parentKey: String? = nil) async throws -> (key: String, version: Int, isDuplicate: Bool) {
+        // Idempotency check: search for existing collection with same name at same level
+        if let existing = try await findCollection(name: name, parentKey: parentKey) {
+            return (key: existing.key, version: existing.version, isDuplicate: true)
+        }
+
         var collectionData: [String: Any] = ["name": name]
         collectionData["parentCollection"] = parentKey ?? false
 
@@ -196,7 +201,35 @@ public class ZoteroWebAPI {
             throw ZoteroWebAPIError.writeFailed("Unknown error creating collection")
         }
 
-        return (key: key, version: version)
+        return (key: key, version: version, isDuplicate: false)
+    }
+
+    /// Find a collection by name and parent (for idempotency check).
+    private func findCollection(name: String, parentKey: String?) async throws -> (key: String, version: Int)? {
+        let url = URL(string: "\(baseURL)/users/\(userId)/collections")!
+        var request = makeRequest(method: "GET", url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else { return nil }
+
+        guard let collections = try? JSONDecoder().decode([ZoteroAPICollection].self, from: data) else {
+            return nil
+        }
+
+        let target = collections.first { c in
+            guard c.data.name == name else { return false }
+            switch (c.data.parentCollection, parentKey) {
+            case (.none, nil), (.none, .some("")): return true
+            case (.key(let k), .some(let pk)): return k == pk
+            default: return false
+            }
+        }
+
+        guard let found = target else { return nil }
+        return (key: found.key, version: found.version)
     }
 
     /// Delete a collection.
@@ -314,28 +347,74 @@ public class ZoteroWebAPI {
         return version
     }
 
+    // MARK: - Search (for idempotency)
+
+    /// Search items by DOI via Zotero Web API (for idempotency check).
+    public func searchItemByDOI(doi: String) async throws -> (key: String, version: Int)? {
+        let cleanDOI = doi
+            .replacingOccurrences(of: "https://doi.org/", with: "")
+            .replacingOccurrences(of: "http://doi.org/", with: "")
+
+        guard !cleanDOI.isEmpty else { return nil }
+
+        var components = URLComponents(string: "\(baseURL)/users/\(userId)/items")!
+        components.queryItems = [
+            URLQueryItem(name: "itemType", value: "-attachment || note"),
+            URLQueryItem(name: "q", value: cleanDOI),
+            URLQueryItem(name: "qmode", value: "everything"),
+            URLQueryItem(name: "limit", value: "5"),
+        ]
+
+        var request = makeRequest(method: "GET", url: components.url!)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else { return nil }
+
+        guard let items = try? JSONDecoder().decode([ZoteroAPIItem].self, from: data) else {
+            return nil
+        }
+
+        // Match by DOI field (the q search is broad, so verify exact match)
+        let match = items.first { item in
+            guard let itemDOI = item.data.DOI else { return false }
+            return itemDOI.lowercased() == cleanDOI.lowercased()
+        }
+
+        guard let found = match else { return nil }
+        return (key: found.key, version: found.version)
+    }
+
     // MARK: - Convenience: Add by DOI
 
-    /// Look up a DOI via OpenAlex and create the item in Zotero.
+    /// Look up a DOI via OpenAlex and create the item in Zotero (idempotent).
     /// Returns the created item key and a summary of what was added.
     public func addItemByDOI(
         doi: String,
         collectionKeys: [String] = [],
         tags: [String] = [],
         academicClient: AcademicSearchClient
-    ) async throws -> (key: String, summary: String) {
+    ) async throws -> (key: String, summary: String, isDuplicate: Bool) {
         let resolver = DOIResolver(academic: academicClient)
         return try await addItemByDOI(doi: doi, collectionKeys: collectionKeys, tags: tags, resolver: resolver)
     }
 
-    /// Look up a DOI via the universal DOI resolver and create the item in Zotero.
-    /// Cascading resolution: OpenAlex → doi.org → Airiti
+    /// Look up a DOI via the universal DOI resolver and create the item in Zotero (idempotent).
+    /// Cascading resolution: OpenAlex → doi.org → Airiti.
+    /// Returns isDuplicate=true if an item with the same DOI already exists.
     public func addItemByDOI(
         doi: String,
         collectionKeys: [String] = [],
         tags: [String] = [],
         resolver: DOIResolver
-    ) async throws -> (key: String, summary: String) {
+    ) async throws -> (key: String, summary: String, isDuplicate: Bool) {
+        // Idempotency check: search by DOI in Zotero Web API
+        if let existing = try? await searchItemByDOI(doi: doi) {
+            return (key: existing.key, summary: "DOI \(doi) already exists [key: \(existing.key)]", isDuplicate: true)
+        }
+
         let metadata = try await resolver.resolve(doi: doi)
         let itemData = metadata.toZoteroItemData(collectionKeys: collectionKeys, tags: tags)
         let result = try await createItem(itemData)
@@ -348,7 +427,7 @@ public class ZoteroWebAPI {
         let dateStr = metadata.date != nil ? " (\(metadata.date!))" : ""
         let summary = "\(metadata.title) — \(authorStr)\(etAl)\(dateStr) [key: \(result.key)] (via \(metadata.source))"
 
-        return (key: result.key, summary: summary)
+        return (key: result.key, summary: summary, isDuplicate: false)
     }
 
     // MARK: - HTTP Helpers

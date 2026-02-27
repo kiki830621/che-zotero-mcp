@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.0] - 2026-02-27
+
+### Added
+- **Write operation idempotency** — all write tools now check-before-write to prevent duplicates:
+  - `zotero_add_item_by_doi` — searches Zotero Web API by DOI before creating
+  - `zotero_create_item` — searches by DOI (if provided) before creating
+  - `zotero_create_collection` — searches by name + parent before creating
+  - `import_publications_to_zotero` — per-DOI dedup via Web API during batch import
+- **`zotero_delete_item`** — new tool to permanently delete an item by key (via Web API)
+- `searchItemByDOI()` — new ZoteroWebAPI method for DOI-based item search
+- `findCollection()` — new ZoteroWebAPI method for collection search by name + parent
+
+### Changed
+- Version bump: 1.2.1 → 1.3.0
+- Server.swift split into 5 files (586 + 190 + 293 + 182 + 53 lines) for maintainability
+- Tool count: 23 → 24 (19 read + 5 write when API key is set)
+- `addItemByDOI()` return type now includes `isDuplicate` flag
+- `createCollection()` return type now includes `isDuplicate` flag
+
+### Fixed
+- Duplicate items created when AI agents retry write operations (root cause of manual cleanup needed in v1.2.0)
+
 ## [1.2.1] - 2026-02-26
 
 ### Added
