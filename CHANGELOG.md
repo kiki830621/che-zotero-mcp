@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.1] - 2026-03-05
+
+### Changed
+- **Tool description disambiguation** — all 24 tools now include explicit scope tags and cross-references:
+  - `[YOUR LIBRARY]` — 12 read tools + 5 write tools that operate on your saved Zotero items
+  - `[EXTERNAL DATABASE]` — 7 tools that query OpenAlex/ORCID (global academic literature)
+  - `[BRIDGE: EXTERNAL → YOUR LIBRARY]` — import_publications_to_zotero
+  - `[YOUR LIBRARY · WRITE]` — 5 write tools with clear write intent
+- High-conflict tool pairs now include explicit "Use when..." guidance and "use X instead" cross-references:
+  - `zotero_search` ↔ `academic_search` (local vs external search)
+  - `zotero_search_by_doi` ↔ `academic_get_paper` (check library vs lookup metadata)
+  - `academic_get_paper` ↔ `zotero_add_item_by_doi` (read-only vs save to library)
+  - `academic_search_author` ↔ `orcid_get_publications` (name search vs curated list)
+- Version bump: 1.3.0 → 1.3.1
+
 ## [1.3.0] - 2026-02-27
 
 ### Added

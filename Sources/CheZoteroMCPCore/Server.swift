@@ -27,7 +27,7 @@ public class CheZoteroMCPServer {
 
         server = Server(
             name: "che-zotero-mcp",
-            version: "1.3.0",
+            version: "1.3.1",
             capabilities: .init(tools: .init())
         )
 
@@ -47,7 +47,7 @@ public class CheZoteroMCPServer {
             // --- Zotero Library Tools (7) ---
             Tool(
                 name: "zotero_search",
-                description: "Search Zotero library by keyword (title, creator, abstract, tags)",
+                description: "[YOUR LIBRARY] Search papers you've already saved in Zotero by keyword (title, creator, abstract, tags). Use when the user asks about papers in their collection. To discover NEW papers from global academic databases, use academic_search instead.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -65,7 +65,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_get_metadata",
-                description: "Get detailed metadata for a Zotero item by its key",
+                description: "[YOUR LIBRARY] Get detailed metadata for an item in your Zotero library by its key",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -79,7 +79,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_get_collections",
-                description: "List all collections in the Zotero library",
+                description: "[YOUR LIBRARY] List all collections in your Zotero library",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([:]),
@@ -88,7 +88,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_get_tags",
-                description: "List all tags in the Zotero library with usage counts",
+                description: "[YOUR LIBRARY] List all tags in your Zotero library with usage counts",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([:]),
@@ -97,7 +97,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_get_recent",
-                description: "Get recently added items",
+                description: "[YOUR LIBRARY] Get recently added items in your Zotero library",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -111,7 +111,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_semantic_search",
-                description: "Semantic search using MLX embeddings (BAAI/bge-m3) — find papers by meaning, not just keywords. Requires index to be built first.",
+                description: "[YOUR LIBRARY] Semantic search within your saved Zotero papers using MLX embeddings (BAAI/bge-m3). Finds items by meaning, not just keywords — useful when the user can't recall exact titles. Requires zotero_build_index first. To discover NEW papers by topic from external databases, use academic_search instead.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -129,7 +129,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_build_index",
-                description: "Build or rebuild the semantic search index from Zotero library. Downloads the embedding model on first run (~1.5GB). Index is persisted to disk.",
+                description: "[YOUR LIBRARY] Build or rebuild the semantic search index from your Zotero library. Downloads the embedding model on first run (~1.5GB). Index is persisted to disk.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([:]),
@@ -140,7 +140,7 @@ public class CheZoteroMCPServer {
             // --- Enhanced Zotero Tools (3) ---
             Tool(
                 name: "zotero_get_items_in_collection",
-                description: "List all items in a specific Zotero collection by its key",
+                description: "[YOUR LIBRARY] List all items in a specific Zotero collection by its key",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -158,7 +158,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_search_by_doi",
-                description: "Search Zotero library for an item by its DOI",
+                description: "[YOUR LIBRARY] Check if a paper with a specific DOI exists in your saved Zotero items. Returns the item's metadata if found. Use when verifying a paper is already saved or checking for duplicates. To look up a paper's metadata from external academic sources by DOI, use academic_get_paper instead.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -172,7 +172,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_get_attachments",
-                description: "Get PDF attachment file paths for a Zotero item",
+                description: "[YOUR LIBRARY] Get PDF attachment file paths for a Zotero item",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -188,7 +188,7 @@ public class CheZoteroMCPServer {
             // --- Academic Search Tools (5) ---
             Tool(
                 name: "academic_search",
-                description: "Search external academic literature via OpenAlex (250M+ papers). Returns titles, authors, year, citation count, DOI, and open access status.",
+                description: "[EXTERNAL DATABASE] Discover NEW papers from OpenAlex (250M+ global academic works). Searches the worldwide academic literature — NOT limited to your Zotero library. Returns titles, authors, year, citation count, DOI, and open access status. Use when the user wants to find, explore, or discover research on a topic. To search within your saved papers, use zotero_search or zotero_semantic_search instead.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -206,7 +206,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "academic_get_paper",
-                description: "Get full metadata for an academic paper by DOI, including abstract, authors, institutions, citation count, and open access info",
+                description: "[EXTERNAL DATABASE] Look up a paper's full metadata from OpenAlex by DOI. Returns abstract, authors, affiliations, citation count, and open access info. This is read-only — it does NOT save the paper to Zotero. Use when the user wants information about a paper they haven't saved. To add a paper to Zotero by DOI, use zotero_add_item_by_doi. To check if a DOI is already in your library, use zotero_search_by_doi.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -220,7 +220,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "academic_get_citations",
-                description: "Get papers that cite a given work (forward citation tracking). Use OpenAlex ID from academic_search results.",
+                description: "[EXTERNAL DATABASE] Get papers that cite a given work — forward citation tracking via OpenAlex. Use when exploring a paper's academic impact or finding follow-up research. Requires OpenAlex ID from academic_search or academic_get_paper results.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -238,7 +238,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "academic_get_references",
-                description: "Get papers referenced by a given work (backward reference tracking). Use OpenAlex ID from academic_search results.",
+                description: "[EXTERNAL DATABASE] Get papers referenced by a given work — backward reference tracking via OpenAlex. Use when exploring a paper's theoretical foundations or finding seminal works. Requires OpenAlex ID from academic_search or academic_get_paper results.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -256,7 +256,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "academic_search_author",
-                description: "Search academic papers by a specific author's name",
+                description: "[EXTERNAL DATABASE] Search OpenAlex for papers by a specific author name. Searches across all published works globally, not limited to your Zotero library. Use when exploring an author's publication record. For a researcher's self-curated list, use orcid_get_publications with their ORCID ID instead.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -276,7 +276,7 @@ public class CheZoteroMCPServer {
             // --- ORCID / Publication Import (2) ---
             Tool(
                 name: "orcid_get_publications",
-                description: "List publications from an ORCID profile (public data, no auth required). Returns the researcher's self-curated publication list with titles, years, DOIs, and journal names.",
+                description: "[EXTERNAL DATABASE] List publications from an ORCID profile (public data, no auth required). Returns the researcher's self-curated, authoritative publication list with titles, years, DOIs, and journal names. More accurate than name-based search for a specific researcher.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -290,7 +290,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "import_publications_to_zotero",
-                description: "Import publications to Zotero from multiple sources. Sources: 'orcid' (authoritative, user-curated — recommended for 'my publications'), 'openalex_orcid' (broader discovery via OpenAlex, may include false positives from name disambiguation), 'dois' (manual DOI list). Uses OpenAlex to enrich metadata. Supports dry_run preview and skip_existing to avoid duplicates.",
+                description: "[BRIDGE: EXTERNAL → YOUR LIBRARY] Batch import publications into Zotero from external sources. Sources: 'orcid' (authoritative, user-curated — recommended for 'my publications'), 'openalex_orcid' (broader discovery via OpenAlex, may include false positives from name disambiguation), 'dois' (manual DOI list). Resolves metadata via DOIResolver cascade (OpenAlex → doi.org → Airiti). Supports dry_run preview and skip_existing to avoid duplicates.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -333,7 +333,7 @@ public class CheZoteroMCPServer {
             // --- Notes & Annotations (2) ---
             Tool(
                 name: "zotero_get_notes",
-                description: "Get all notes attached to a Zotero item (plain text, HTML stripped)",
+                description: "[YOUR LIBRARY] Get all notes attached to a Zotero item (plain text, HTML stripped)",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -347,7 +347,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_get_annotations",
-                description: "Get PDF annotations (highlights, notes, underlines) for a Zotero item",
+                description: "[YOUR LIBRARY] Get PDF annotations (highlights, notes, underlines) for a Zotero item",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -366,7 +366,7 @@ public class CheZoteroMCPServer {
             allTools.append(contentsOf: [
                 Tool(
                     name: "zotero_create_collection",
-                    description: "Create a new collection in Zotero (via Web API)",
+                    description: "[YOUR LIBRARY · WRITE] Create a new collection in your Zotero library (via Web API)",
                     inputSchema: .object([
                         "type": .string("object"),
                         "properties": .object([
@@ -384,7 +384,7 @@ public class CheZoteroMCPServer {
                 ),
                 Tool(
                     name: "zotero_add_item_by_doi",
-                    description: "Add a paper to Zotero by DOI — auto-fills metadata from OpenAlex (title, authors, abstract, journal, date). Optionally add to collections and apply tags.",
+                    description: "[YOUR LIBRARY · WRITE] Add a paper to your Zotero library by DOI. Resolves metadata from external sources (OpenAlex → doi.org → Airiti) and creates a new item. Skips if DOI already exists (idempotent). Use when the user wants to SAVE a paper. To just look up info without saving, use academic_get_paper instead.",
                     inputSchema: .object([
                         "type": .string("object"),
                         "properties": .object([
@@ -408,7 +408,7 @@ public class CheZoteroMCPServer {
                 ),
                 Tool(
                     name: "zotero_create_item",
-                    description: "Create a new item in Zotero with explicit fields (via Web API). For adding by DOI with auto-fill, use zotero_add_item_by_doi instead.",
+                    description: "[YOUR LIBRARY · WRITE] Create a new item in your Zotero library with explicit fields (via Web API). For adding by DOI with auto-fill, use zotero_add_item_by_doi instead.",
                     inputSchema: .object([
                         "type": .string("object"),
                         "properties": .object([
@@ -463,7 +463,7 @@ public class CheZoteroMCPServer {
                 ),
                 Tool(
                     name: "zotero_add_to_collection",
-                    description: "Add an existing Zotero item to a collection (via Web API)",
+                    description: "[YOUR LIBRARY · WRITE] Add an existing Zotero item to a collection (via Web API)",
                     inputSchema: .object([
                         "type": .string("object"),
                         "properties": .object([
@@ -481,7 +481,7 @@ public class CheZoteroMCPServer {
                 ),
                 Tool(
                     name: "zotero_delete_item",
-                    description: "Delete an item from Zotero by its key (via Web API). This permanently removes the item and its child notes/attachments.",
+                    description: "[YOUR LIBRARY · WRITE] Delete an item from your Zotero library by its key (via Web API). Permanently removes the item and its child notes/attachments.",
                     inputSchema: .object([
                         "type": .string("object"),
                         "properties": .object([
