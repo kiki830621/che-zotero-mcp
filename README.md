@@ -88,12 +88,13 @@ claude mcp add --scope user --transport stdio -e ZOTERO_API_KEY=your_key che-zot
 
 Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable library read/write access)
 
-## Tools (34)
+## Tools (35)
 
-### Zotero Library — Read (13)
+### Zotero Library — Read (14)
 
 | Tool | Description |
 |------|-------------|
+| `zotero_list_groups` | List Zotero group libraries (name, groupID, item count) |
 | `zotero_search` | Keyword search (title, creator, tags) |
 | `zotero_get_my_publications` | List items in "My Publications" (local → Web API fallback) |
 | `zotero_get_metadata` | Get detailed metadata for an item |
@@ -107,6 +108,8 @@ Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable lib
 | `zotero_get_attachments` | Get PDF attachment paths |
 | `zotero_get_notes` | Get notes attached to an item (plain text) |
 | `zotero_get_annotations` | Get PDF annotations (highlights, comments) |
+
+> **Group library support**: Most read/write tools accept an optional `group_id` parameter. Use `zotero_list_groups` to discover available groups, then pass `group_id` to search, browse, or write to a specific group library. Omit `group_id` to use your personal library (default).
 
 ### Zotero Library — Write (9, requires `ZOTERO_API_KEY`)
 
@@ -241,6 +244,7 @@ Each tool connects to one of three data sources. Understanding this helps troubl
 
 | Version | Changes |
 |---------|---------|
+| v1.11.0 | Group library support: `zotero_list_groups` + optional `group_id` parameter on all read/write tools (local SQLite + Web API) |
 | v1.10.0 | File attachment upload: `zotero_add_attachment` — upload local PDF/EPUB/images to Zotero cloud via Web API file upload flow |
 | v1.9.0 | Duplicate detection and merge: `zotero_find_duplicates` (scan → confirm → merge), 3-tier confidence (DOI/title+author/title-only), intelligent primary selection |
 | v1.8.0 | Title normalization: `zotero_normalize_titles` (batch Title Case → sentence case), proper noun list (~500 terms), sentence case detection heuristic, enhanced `protectProperNouns` |

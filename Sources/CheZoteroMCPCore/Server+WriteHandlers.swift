@@ -17,11 +17,12 @@ extension CheZoteroMCPServer {
     func handleCreateCollection(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let name = params.arguments?["name"]?.stringValue ?? ""
         let parentKey = params.arguments?["parent_key"]?.stringValue
 
-        let result = try await api.createCollection(name: name, parentKey: parentKey)
+        let result = try await api.createCollection(name: name, parentKey: parentKey, target: target)
 
         if result.isDuplicate {
             return CallTool.Result(
@@ -41,6 +42,7 @@ extension CheZoteroMCPServer {
     func handleAddItemByDOI(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let doi = params.arguments?["doi"]?.stringValue ?? ""
         let collectionKeys = extractStringArray(params.arguments?["collection_keys"])
@@ -50,7 +52,8 @@ extension CheZoteroMCPServer {
             doi: doi,
             collectionKeys: collectionKeys,
             tags: tags,
-            resolver: doiResolver
+            resolver: doiResolver,
+            target: target
         )
 
         if result.isDuplicate {
@@ -74,6 +77,7 @@ extension CheZoteroMCPServer {
     func handleCreateItem(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let itemType = params.arguments?["item_type"]?.stringValue ?? "journalArticle"
         let title = params.arguments?["title"]?.stringValue ?? ""
@@ -86,7 +90,7 @@ extension CheZoteroMCPServer {
 
         // Idempotency check: if DOI is provided, check if it already exists
         if let doi = doi, !doi.isEmpty {
-            if let existing = try? await api.searchItemByDOI(doi: doi) {
+            if let existing = try? await api.searchItemByDOI(doi: doi, target: target) {
                 return CallTool.Result(
                     content: [.text("Skipped (duplicate): item with DOI \(doi) already exists [key: \(existing.key)]")],
                     isError: false
@@ -129,7 +133,7 @@ extension CheZoteroMCPServer {
         if !tags.isEmpty { itemData["tags"] = tags.map { ["tag": $0] } }
         if !collectionKeys.isEmpty { itemData["collections"] = collectionKeys }
 
-        let result = try await api.createItem(itemData)
+        let result = try await api.createItem(itemData, target: target)
 
         var text = "Item created: \"\(title)\" [\(itemType)] [key: \(result.key)]"
         if !collectionKeys.isEmpty {
@@ -142,12 +146,13 @@ extension CheZoteroMCPServer {
     func handleAddToCollection(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let itemKey = params.arguments?["item_key"]?.stringValue ?? ""
         let collectionKey = params.arguments?["collection_key"]?.stringValue ?? ""
 
         // Get current version from API
-        let version = try await api.getItemVersion(itemKey: itemKey)
+        let version = try await api.getItemVersion(itemKey: itemKey, target: target)
 
         // Get current collections for the item (from local SQLite), add the new one
         let currentCollections = try reader.getItemCollectionKeys(itemKey: itemKey)
@@ -156,7 +161,7 @@ extension CheZoteroMCPServer {
             updatedCollections.append(collectionKey)
         }
 
-        try await api.addItemToCollection(itemKey: itemKey, collectionKeys: updatedCollections, currentVersion: version)
+        try await api.addItemToCollection(itemKey: itemKey, collectionKeys: updatedCollections, currentVersion: version, target: target)
 
         return CallTool.Result(
             content: [.text("Item \(itemKey) added to collection \(collectionKey).\nNote: Zotero desktop will sync on next cycle.")],
@@ -167,11 +172,12 @@ extension CheZoteroMCPServer {
     func handleDeleteCollection(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let collectionKey = params.arguments?["collection_key"]?.stringValue ?? ""
 
-        let version = try await api.getCollectionVersion(collectionKey: collectionKey)
-        try await api.deleteCollection(collectionKey: collectionKey, version: version)
+        let version = try await api.getCollectionVersion(collectionKey: collectionKey, target: target)
+        try await api.deleteCollection(collectionKey: collectionKey, version: version, target: target)
 
         return CallTool.Result(
             content: [.text("Collection deleted: \(collectionKey)\nItems inside were NOT deleted — only the collection container was removed.\nNote: Zotero desktop will sync on next cycle.")],
@@ -182,6 +188,7 @@ extension CheZoteroMCPServer {
     func handleNormalizeTitles(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let dryRun = params.arguments?["dry_run"]?.boolValue ?? true
 
@@ -231,9 +238,9 @@ extension CheZoteroMCPServer {
 
             if !dryRun {
                 do {
-                    let version = try await api.getItemVersion(itemKey: result.itemKey)
+                    let version = try await api.getItemVersion(itemKey: result.itemKey, target: target)
                     let body: [String: Any] = ["title": result.normalizedTitle]
-                    try await api.patchItem(itemKey: result.itemKey, fields: body, version: version)
+                    try await api.patchItem(itemKey: result.itemKey, fields: body, version: version, target: target)
                     output.append("  Status: ✓ Updated")
                 } catch {
                     output.append("  Status: ✗ Error: \(error.localizedDescription)")
@@ -261,6 +268,7 @@ extension CheZoteroMCPServer {
     func handleFindDuplicates(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let action = params.arguments?["action"]?.stringValue ?? "scan"
 
@@ -268,7 +276,7 @@ extension CheZoteroMCPServer {
         case "scan":
             return try handleDuplicateScan(params)
         case "merge":
-            return try await handleDuplicateMerge(params, api: api)
+            return try await handleDuplicateMerge(params, api: api, target: target)
         default:
             return CallTool.Result(
                 content: [.text("Unknown action: \(action). Use 'scan' or 'merge'.")],
@@ -338,7 +346,7 @@ extension CheZoteroMCPServer {
         return CallTool.Result(content: [.text(output.joined(separator: "\n"))], isError: false)
     }
 
-    private func handleDuplicateMerge(_ params: CallTool.Parameters, api: ZoteroWebAPI) async throws -> CallTool.Result {
+    private func handleDuplicateMerge(_ params: CallTool.Parameters, api: ZoteroWebAPI, target: LibraryTarget = .user) async throws -> CallTool.Result {
         guard let keepKey = params.arguments?["keep_key"]?.stringValue, !keepKey.isEmpty else {
             return CallTool.Result(
                 content: [.text("merge requires keep_key parameter.")],
@@ -394,8 +402,8 @@ extension CheZoteroMCPServer {
         let currentTags = Set(primary.tags)
         let mergedTagSet = Set(merge.mergedTags)
         if mergedTagSet != currentTags {
-            let version = try await api.getItemVersion(itemKey: keepKey)
-            try await api.updateTags(itemKey: keepKey, tags: merge.mergedTags, currentVersion: version)
+            let version = try await api.getItemVersion(itemKey: keepKey, target: target)
+            try await api.updateTags(itemKey: keepKey, tags: merge.mergedTags, currentVersion: version, target: target)
             let addedTags = mergedTagSet.subtracting(currentTags)
             if !addedTags.isEmpty {
                 output.append("Tags merged: +\(addedTags.sorted().joined(separator: ", "))")
@@ -406,11 +414,12 @@ extension CheZoteroMCPServer {
         let currentCollSet = Set(primaryCollKeys)
         let mergedCollSet = Set(merge.mergedCollectionKeys)
         if mergedCollSet != currentCollSet {
-            let version = try await api.getItemVersion(itemKey: keepKey)
+            let version = try await api.getItemVersion(itemKey: keepKey, target: target)
             try await api.addItemToCollection(
                 itemKey: keepKey,
                 collectionKeys: merge.mergedCollectionKeys,
-                currentVersion: version
+                currentVersion: version,
+                target: target
             )
             let addedColls = mergedCollSet.subtracting(currentCollSet)
             if !addedColls.isEmpty {
@@ -420,13 +429,13 @@ extension CheZoteroMCPServer {
 
         // Step 3: Fill missing fields
         if !merge.fieldsToFill.isEmpty {
-            let version = try await api.getItemVersion(itemKey: keepKey)
+            let version = try await api.getItemVersion(itemKey: keepKey, target: target)
             // Convert [String: String] to [String: Any]
             var fields: [String: Any] = [:]
             for (k, v) in merge.fieldsToFill {
                 fields[k] = v
             }
-            try await api.patchItem(itemKey: keepKey, fields: fields, version: version)
+            try await api.patchItem(itemKey: keepKey, fields: fields, version: version, target: target)
             output.append("Fields filled from duplicates: \(merge.fieldsToFill.keys.sorted().joined(separator: ", "))")
         }
 
@@ -435,8 +444,8 @@ extension CheZoteroMCPServer {
         var deleteErrors: [String] = []
         for key in deleteKeys {
             do {
-                let version = try await api.getItemVersion(itemKey: key)
-                try await api.deleteItem(itemKey: key, version: version)
+                let version = try await api.getItemVersion(itemKey: key, target: target)
+                try await api.deleteItem(itemKey: key, version: version, target: target)
                 deletedKeys.append(key)
             } catch {
                 deleteErrors.append("\(key): \(error.localizedDescription)")
@@ -460,6 +469,7 @@ extension CheZoteroMCPServer {
     func handleAddAttachment(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let itemKey = params.arguments?["item_key"]?.stringValue ?? ""
         let filePath = params.arguments?["file_path"]?.stringValue ?? ""
@@ -481,7 +491,8 @@ extension CheZoteroMCPServer {
         let result = try await api.addAttachment(
             parentItemKey: itemKey,
             filePath: filePath,
-            title: title
+            title: title,
+            target: target
         )
 
         let sizeStr = fileSizeMB < 1
@@ -498,12 +509,13 @@ extension CheZoteroMCPServer {
     func handleDeleteItem(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!
+        let target = resolveLibraryTarget(from: params)
 
         let itemKey = params.arguments?["item_key"]?.stringValue ?? ""
 
         // Get current version (required for delete)
-        let version = try await api.getItemVersion(itemKey: itemKey)
-        try await api.deleteItem(itemKey: itemKey, version: version)
+        let version = try await api.getItemVersion(itemKey: itemKey, target: target)
+        try await api.deleteItem(itemKey: itemKey, version: version, target: target)
 
         return CallTool.Result(
             content: [.text("Item deleted: \(itemKey)\nNote: Zotero desktop will sync on next cycle to reflect this change locally.")],

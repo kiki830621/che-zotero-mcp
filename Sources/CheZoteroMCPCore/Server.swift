@@ -29,7 +29,7 @@ public class CheZoteroMCPServer {
 
         server = Server(
             name: "che-zotero-mcp",
-            version: "1.10.0",
+            version: "1.11.0",
             capabilities: .init(tools: .init())
         )
 
@@ -46,10 +46,21 @@ public class CheZoteroMCPServer {
 
     private static func defineTools(hasWebAPI: Bool = false) -> [Tool] {
         var allTools: [Tool] = [
+            // --- Group Library Tools (1) ---
+            Tool(
+                name: "zotero_list_groups",
+                description: "[YOUR LIBRARY] List all Zotero group libraries you have access to. Returns group IDs and names. Use the group_id from these results with other tools to operate on group libraries instead of your personal library.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([:]),
+                    "required": .array([])
+                ])
+            ),
+
             // --- Zotero Library Tools (7) ---
             Tool(
                 name: "zotero_search",
-                description: "[YOUR LIBRARY] Search papers you've already saved in Zotero by keyword (title, creator, abstract, tags). Use when the user asks about papers in their collection. To discover NEW papers from global academic databases, use academic_search instead.",
+                description: "[YOUR LIBRARY] Search papers you've already saved in Zotero by keyword (title, creator, abstract, tags). Use when the user asks about papers in their collection. To discover NEW papers from global academic databases, use academic_search instead. Set group_id to search a group library instead of your personal library.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -60,6 +71,10 @@ public class CheZoteroMCPServer {
                         "limit": .object([
                             "type": .string("integer"),
                             "description": .string("Max results to return (default: 10)")
+                        ]),
+                        "group_id": .object([
+                            "type": .string("integer"),
+                            "description": .string("Group ID to search in a group library (optional, default: personal library). Use zotero_list_groups to find group IDs.")
                         ])
                     ]),
                     "required": .array([.string("query")])
@@ -95,31 +110,45 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_get_collections",
-                description: "[YOUR LIBRARY] List all collections in your Zotero library",
+                description: "[YOUR LIBRARY] List all collections in your Zotero library. Set group_id to list collections in a group library.",
                 inputSchema: .object([
                     "type": .string("object"),
-                    "properties": .object([:]),
+                    "properties": .object([
+                        "group_id": .object([
+                            "type": .string("integer"),
+                            "description": .string("Group ID for group library (optional, default: personal library)")
+                        ])
+                    ]),
                     "required": .array([])
                 ])
             ),
             Tool(
                 name: "zotero_get_tags",
-                description: "[YOUR LIBRARY] List all tags in your Zotero library with usage counts",
+                description: "[YOUR LIBRARY] List all tags in your Zotero library with usage counts. Set group_id for group library.",
                 inputSchema: .object([
                     "type": .string("object"),
-                    "properties": .object([:]),
+                    "properties": .object([
+                        "group_id": .object([
+                            "type": .string("integer"),
+                            "description": .string("Group ID for group library (optional, default: personal library)")
+                        ])
+                    ]),
                     "required": .array([])
                 ])
             ),
             Tool(
                 name: "zotero_get_recent",
-                description: "[YOUR LIBRARY] Get recently added items in your Zotero library",
+                description: "[YOUR LIBRARY] Get recently added items in your Zotero library. Set group_id for group library.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
                         "limit": .object([
                             "type": .string("integer"),
                             "description": .string("Number of recent items (default: 10)")
+                        ]),
+                        "group_id": .object([
+                            "type": .string("integer"),
+                            "description": .string("Group ID for group library (optional, default: personal library)")
                         ])
                     ]),
                     "required": .array([])
@@ -174,13 +203,17 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_search_by_doi",
-                description: "[YOUR LIBRARY] Check if a paper with a specific DOI exists in your saved Zotero items. Returns the item's metadata if found. Use when verifying a paper is already saved or checking for duplicates. To look up a paper's metadata from external academic sources by DOI, use academic_lookup_doi instead.",
+                description: "[YOUR LIBRARY] Check if a paper with a specific DOI exists in your saved Zotero items. Returns the item's metadata if found. Set group_id to search a group library.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
                         "doi": .object([
                             "type": .string("string"),
                             "description": .string("DOI to search for (with or without https://doi.org/ prefix)")
+                        ]),
+                        "group_id": .object([
+                            "type": .string("integer"),
+                            "description": .string("Group ID for group library (optional, default: personal library)")
                         ])
                     ]),
                     "required": .array([.string("doi")])
@@ -501,7 +534,7 @@ public class CheZoteroMCPServer {
             allTools.append(contentsOf: [
                 Tool(
                     name: "zotero_create_collection",
-                    description: "[YOUR LIBRARY · WRITE] Create a new collection in your Zotero library (via Web API)",
+                    description: "[YOUR LIBRARY · WRITE] Create a new collection in your Zotero library (via Web API). Set group_id for group library.",
                     inputSchema: .object([
                         "type": .string("object"),
                         "properties": .object([
@@ -512,6 +545,10 @@ public class CheZoteroMCPServer {
                             "parent_key": .object([
                                 "type": .string("string"),
                                 "description": .string("Parent collection key (optional, omit for top-level)")
+                            ]),
+                            "group_id": .object([
+                                "type": .string("integer"),
+                                "description": .string("Group ID for group library (optional, default: personal library)")
                             ])
                         ]),
                         "required": .array([.string("name")])
@@ -519,7 +556,7 @@ public class CheZoteroMCPServer {
                 ),
                 Tool(
                     name: "zotero_add_item_by_doi",
-                    description: "[YOUR LIBRARY · WRITE] Add a paper to your Zotero library by DOI. Resolves metadata from external sources (OpenAlex → doi.org → Airiti) and creates a new item. Skips if DOI already exists (idempotent). Use when the user wants to SAVE a paper. To just look up info without saving, use academic_lookup_doi instead.",
+                    description: "[YOUR LIBRARY · WRITE] Add a paper to your Zotero library by DOI. Resolves metadata from external sources (OpenAlex → doi.org → Airiti) and creates a new item. Skips if DOI already exists (idempotent). Set group_id for group library.",
                     inputSchema: .object([
                         "type": .string("object"),
                         "properties": .object([
@@ -536,6 +573,10 @@ public class CheZoteroMCPServer {
                                 "type": .string("array"),
                                 "items": .object(["type": .string("string")]),
                                 "description": .string("Tags to apply (optional)")
+                            ]),
+                            "group_id": .object([
+                                "type": .string("integer"),
+                                "description": .string("Group ID for group library (optional, default: personal library)")
                             ])
                         ]),
                         "required": .array([.string("doi")])
@@ -741,6 +782,10 @@ public class CheZoteroMCPServer {
     private func handleToolCall(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         do {
             switch params.name {
+            // Group Library Tools
+            case "zotero_list_groups":
+                return try handleListGroups()
+
             // Zotero Library Tools
             case "zotero_search":
                 return try handleSearch(params)
@@ -749,9 +794,9 @@ public class CheZoteroMCPServer {
             case "zotero_get_metadata":
                 return try handleGetMetadata(params)
             case "zotero_get_collections":
-                return try handleGetCollections()
+                return try handleGetCollections(params)
             case "zotero_get_tags":
-                return try handleGetTags()
+                return try handleGetTags(params)
             case "zotero_get_recent":
                 return try handleGetRecent(params)
             case "zotero_semantic_search":

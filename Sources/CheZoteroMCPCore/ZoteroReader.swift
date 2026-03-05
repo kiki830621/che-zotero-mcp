@@ -64,6 +64,12 @@ public struct ZoteroCollection {
     public let itemCount: Int
 }
 
+public struct ZoteroGroup {
+    public let groupID: Int
+    public let name: String
+    public let libraryID: Int
+}
+
 // MARK: - ZoteroReader
 
 public class ZoteroReader {
@@ -98,17 +104,63 @@ public class ZoteroReader {
         return "\(home)/Zotero/zotero.sqlite"
     }
 
+    // MARK: - Groups
+
+    /// List all group libraries synced locally.
+    public func getGroups() throws -> [ZoteroGroup] {
+        let sql = """
+            SELECT g.groupID, g.name, g.libraryID
+            FROM groups g
+            JOIN libraries l ON g.libraryID = l.libraryID
+            WHERE l.type = 'group'
+            ORDER BY g.name
+            """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw ZoteroError.queryFailed(String(cString: sqlite3_errmsg(db)))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var results: [ZoteroGroup] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let groupID = Int(sqlite3_column_int(stmt, 0))
+            let name = String(cString: sqlite3_column_text(stmt, 1))
+            let libraryID = Int(sqlite3_column_int(stmt, 2))
+            results.append(ZoteroGroup(groupID: groupID, name: name, libraryID: libraryID))
+        }
+        return results
+    }
+
+    /// Resolve a groupID to internal libraryID.
+    public func resolveLibraryID(groupID: Int) throws -> Int? {
+        let sql = "SELECT libraryID FROM groups WHERE groupID = ?1"
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw ZoteroError.queryFailed(String(cString: sqlite3_errmsg(db)))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        sqlite3_bind_int(stmt, 1, Int32(groupID))
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return Int(sqlite3_column_int(stmt, 0))
+    }
+
     // MARK: - Search
 
     /// Search items by keyword in title, creator names, and tags.
-    public func search(query: String, limit: Int = 10) throws -> [ZoteroItem] {
+    /// When libraryID is nil, searches all libraries; otherwise filters to the specified library.
+    public func search(query: String, limit: Int = 10, libraryID: Int? = nil) throws -> [ZoteroItem] {
         let pattern = "%\(query)%"
+        let libFilter = libraryID != nil ? "AND i.libraryID = ?3" : ""
 
         let sql = """
             SELECT DISTINCT i.itemID, i.key, it.typeName, i.dateAdded, i.dateModified
             FROM items i
             JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
             WHERE i.itemTypeID NOT IN (\(Self.excludedTypeIDs.map(String.init).joined(separator: ",")))
+            \(libFilter)
             AND (
                 i.itemID IN (
                     SELECT id.itemID FROM itemData id
@@ -139,6 +191,9 @@ public class ZoteroReader {
 
         sqlite3_bind_text(stmt, 1, pattern, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_int(stmt, 2, Int32(limit))
+        if let libID = libraryID {
+            sqlite3_bind_int(stmt, 3, Int32(libID))
+        }
 
         var itemIDs: [(itemID: Int, key: String, typeName: String, dateAdded: String, dateModified: String)] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -186,13 +241,15 @@ public class ZoteroReader {
 
     // MARK: - Collections
 
-    /// List all collections.
-    public func getCollections() throws -> [ZoteroCollection] {
+    /// List all collections. When libraryID is nil, returns collections from all libraries.
+    public func getCollections(libraryID: Int? = nil) throws -> [ZoteroCollection] {
+        let libFilter = libraryID != nil ? "WHERE c.libraryID = ?1" : ""
         let sql = """
             SELECT c.key, c.collectionName, pc.key as parentKey,
                    (SELECT COUNT(*) FROM collectionItems ci WHERE ci.collectionID = c.collectionID) as itemCount
             FROM collections c
             LEFT JOIN collections pc ON c.parentCollectionID = pc.collectionID
+            \(libFilter)
             ORDER BY c.collectionName
             """
 
@@ -201,6 +258,10 @@ public class ZoteroReader {
             throw ZoteroError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
         defer { sqlite3_finalize(stmt) }
+
+        if let libID = libraryID {
+            sqlite3_bind_int(stmt, 1, Int32(libID))
+        }
 
         var results: [ZoteroCollection] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -215,12 +276,16 @@ public class ZoteroReader {
 
     // MARK: - Tags
 
-    /// List all tags with usage count.
-    public func getTags() throws -> [(name: String, count: Int)] {
+    /// List all tags with usage count. When libraryID is nil, returns tags from all libraries.
+    public func getTags(libraryID: Int? = nil) throws -> [(name: String, count: Int)] {
+        let libJoin = libraryID != nil ? "JOIN items i ON it.itemID = i.itemID" : ""
+        let libFilter = libraryID != nil ? "WHERE i.libraryID = ?1" : ""
         let sql = """
             SELECT t.name, COUNT(it.itemID) as cnt
             FROM tags t
             JOIN itemTags it ON t.tagID = it.tagID
+            \(libJoin)
+            \(libFilter)
             GROUP BY t.tagID
             ORDER BY cnt DESC
             """
@@ -230,6 +295,10 @@ public class ZoteroReader {
             throw ZoteroError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
         defer { sqlite3_finalize(stmt) }
+
+        if let libID = libraryID {
+            sqlite3_bind_int(stmt, 1, Int32(libID))
+        }
 
         var results: [(name: String, count: Int)] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -242,13 +311,15 @@ public class ZoteroReader {
 
     // MARK: - Recent Items
 
-    /// Get recently added items.
-    public func getRecent(limit: Int = 10) throws -> [ZoteroItem] {
+    /// Get recently added items. When libraryID is nil, returns items from all libraries.
+    public func getRecent(limit: Int = 10, libraryID: Int? = nil) throws -> [ZoteroItem] {
+        let libFilter = libraryID != nil ? "AND i.libraryID = ?2" : ""
         let sql = """
             SELECT i.itemID, i.key, it.typeName, i.dateAdded, i.dateModified
             FROM items i
             JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
             WHERE i.itemTypeID NOT IN (\(Self.excludedTypeIDs.map(String.init).joined(separator: ",")))
+            \(libFilter)
             ORDER BY i.dateAdded DESC
             LIMIT ?1
             """
@@ -260,6 +331,9 @@ public class ZoteroReader {
         defer { sqlite3_finalize(stmt) }
 
         sqlite3_bind_int(stmt, 1, Int32(limit))
+        if let libID = libraryID {
+            sqlite3_bind_int(stmt, 2, Int32(libID))
+        }
 
         var itemIDs: [(itemID: Int, key: String, typeName: String, dateAdded: String, dateModified: String)] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -350,12 +424,13 @@ public class ZoteroReader {
 
     // MARK: - Search by DOI
 
-    /// Search for an item by DOI.
-    public func searchByDOI(doi: String) throws -> ZoteroItem? {
+    /// Search for an item by DOI. When libraryID is nil, searches all libraries.
+    public func searchByDOI(doi: String, libraryID: Int? = nil) throws -> ZoteroItem? {
         let cleanDOI = doi
             .replacingOccurrences(of: "https://doi.org/", with: "")
             .replacingOccurrences(of: "http://doi.org/", with: "")
 
+        let libFilter = libraryID != nil ? "AND i.libraryID = ?2" : ""
         let sql = """
             SELECT i.itemID, i.key, it.typeName, i.dateAdded, i.dateModified
             FROM items i
@@ -365,6 +440,7 @@ public class ZoteroReader {
             JOIN itemDataValues idv ON id.valueID = idv.valueID
             WHERE f.fieldName = 'DOI' AND idv.value = ?1
             AND i.itemTypeID NOT IN (\(Self.excludedTypeIDs.map(String.init).joined(separator: ",")))
+            \(libFilter)
             LIMIT 1
             """
 
@@ -375,6 +451,9 @@ public class ZoteroReader {
         defer { sqlite3_finalize(stmt) }
 
         sqlite3_bind_text(stmt, 1, cleanDOI, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        if let libID = libraryID {
+            sqlite3_bind_int(stmt, 2, Int32(libID))
+        }
 
         guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
 
@@ -595,12 +674,15 @@ public class ZoteroReader {
     // MARK: - Get All Items (for building embedding index)
 
     /// Get all library items. Used to build the semantic search index.
-    public func getAllItems() throws -> [ZoteroItem] {
+    /// When libraryID is nil, returns items from all libraries.
+    public func getAllItems(libraryID: Int? = nil) throws -> [ZoteroItem] {
+        let libFilter = libraryID != nil ? "AND i.libraryID = ?1" : ""
         let sql = """
             SELECT i.itemID, i.key, it.typeName, i.dateAdded, i.dateModified
             FROM items i
             JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
             WHERE i.itemTypeID NOT IN (\(Self.excludedTypeIDs.map(String.init).joined(separator: ",")))
+            \(libFilter)
             ORDER BY i.dateAdded DESC
             """
 
@@ -609,6 +691,10 @@ public class ZoteroReader {
             throw ZoteroError.queryFailed(String(cString: sqlite3_errmsg(db)))
         }
         defer { sqlite3_finalize(stmt) }
+
+        if let libID = libraryID {
+            sqlite3_bind_int(stmt, 1, Int32(libID))
+        }
 
         var itemIDs: [(itemID: Int, key: String, typeName: String, dateAdded: String, dateModified: String)] = []
         while sqlite3_step(stmt) == SQLITE_ROW {

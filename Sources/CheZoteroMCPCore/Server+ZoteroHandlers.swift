@@ -4,12 +4,54 @@ import MCP
 
 extension CheZoteroMCPServer {
 
+    // MARK: - Group ID Resolution
+
+    /// Resolve group_id parameter to internal libraryID for SQLite queries.
+    func resolveLibraryID(from params: CallTool.Parameters) throws -> Int? {
+        guard let groupId = intFromValue(params.arguments?["group_id"]) else {
+            return nil  // personal library (no filter)
+        }
+        guard let libraryID = try reader.resolveLibraryID(groupID: groupId) else {
+            throw ZoteroError.queryFailed("Group not found: \(groupId). Use zotero_list_groups to see available groups.")
+        }
+        return libraryID
+    }
+
+    /// Resolve group_id parameter to LibraryTarget for Web API calls.
+    func resolveLibraryTarget(from params: CallTool.Parameters) -> LibraryTarget {
+        guard let groupId = intFromValue(params.arguments?["group_id"]) else {
+            return .user
+        }
+        return .group(groupId)
+    }
+
+    // MARK: - Group Handlers
+
+    func handleListGroups() throws -> CallTool.Result {
+        let groups = try reader.getGroups()
+
+        if groups.isEmpty {
+            return CallTool.Result(content: [.text("No group libraries found. You only have a personal library.")], isError: false)
+        }
+
+        var lines = ["Group libraries (\(groups.count)):"]
+        for g in groups {
+            lines.append("- \(g.name) [group_id: \(g.groupID)]")
+        }
+        lines.append("\nUse the group_id with other tools (e.g., zotero_search, zotero_get_collections) to operate on a group library.")
+        return CallTool.Result(content: [.text(lines.joined(separator: "\n"))], isError: false)
+    }
+
+    // MARK: - Zotero Handlers
+
     func handleSearch(_ params: CallTool.Parameters) throws -> CallTool.Result {
         let query = params.arguments?["query"]?.stringValue ?? ""
         let limit = intFromValue(params.arguments?["limit"]) ?? 10
+        let libraryID = try resolveLibraryID(from: params)
 
-        let items = try reader.search(query: query, limit: limit)
-        let text = formatItems(items, header: "Search results for '\(query)'")
+        let items = try reader.search(query: query, limit: limit, libraryID: libraryID)
+        let groupLabel = libraryID != nil ? " (group library)" : ""
+        let text = formatItems(items, header: "Search results for '\(query)'\(groupLabel)")
         return CallTool.Result(content: [.text(text)], isError: false)
     }
 
@@ -62,8 +104,9 @@ extension CheZoteroMCPServer {
         return CallTool.Result(content: [.text(text)], isError: false)
     }
 
-    func handleGetCollections() throws -> CallTool.Result {
-        let collections = try reader.getCollections()
+    func handleGetCollections(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        let libraryID = try resolveLibraryID(from: params)
+        let collections = try reader.getCollections(libraryID: libraryID)
 
         if collections.isEmpty {
             return CallTool.Result(content: [.text("No collections found.")], isError: false)
@@ -77,8 +120,9 @@ extension CheZoteroMCPServer {
         return CallTool.Result(content: [.text(lines.joined(separator: "\n"))], isError: false)
     }
 
-    func handleGetTags() throws -> CallTool.Result {
-        let tags = try reader.getTags()
+    func handleGetTags(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        let libraryID = try resolveLibraryID(from: params)
+        let tags = try reader.getTags(libraryID: libraryID)
 
         if tags.isEmpty {
             return CallTool.Result(content: [.text("No tags found.")], isError: false)
@@ -93,8 +137,10 @@ extension CheZoteroMCPServer {
 
     func handleGetRecent(_ params: CallTool.Parameters) throws -> CallTool.Result {
         let limit = intFromValue(params.arguments?["limit"]) ?? 10
-        let items = try reader.getRecent(limit: limit)
-        let text = formatItems(items, header: "Recent \(items.count) items")
+        let libraryID = try resolveLibraryID(from: params)
+        let items = try reader.getRecent(limit: limit, libraryID: libraryID)
+        let groupLabel = libraryID != nil ? " (group library)" : ""
+        let text = formatItems(items, header: "Recent \(items.count) items\(groupLabel)")
         return CallTool.Result(content: [.text(text)], isError: false)
     }
 
@@ -156,8 +202,9 @@ extension CheZoteroMCPServer {
 
     func handleSearchByDOI(_ params: CallTool.Parameters) throws -> CallTool.Result {
         let doi = params.arguments?["doi"]?.stringValue ?? ""
+        let libraryID = try resolveLibraryID(from: params)
 
-        guard let item = try reader.searchByDOI(doi: doi) else {
+        guard let item = try reader.searchByDOI(doi: doi, libraryID: libraryID) else {
             return CallTool.Result(content: [.text("No item found with DOI: \(doi)")], isError: false)
         }
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.11.0] - 2026-03-06
+
+### Added
+- **New tool: `zotero_list_groups`** — List all Zotero group libraries you have access to. Returns group IDs and names for use with other tools.
+- **Group library support** — Added optional `group_id` parameter to 12 tools: `zotero_search`, `zotero_get_collections`, `zotero_get_tags`, `zotero_get_recent`, `zotero_search_by_doi`, `zotero_create_collection`, `zotero_add_item_by_doi`, `zotero_create_item`, `zotero_add_to_collection`, `zotero_add_attachment`, `zotero_delete_item`, `zotero_delete_collection`. Set `group_id` to operate on a group library instead of the personal library.
+- **`LibraryTarget` enum** (`ZoteroWebAPI.swift`) — `.user` or `.group(groupId)` for routing Web API calls to the correct library path (`/users/{userId}/` vs `/groups/{groupId}/`).
+- **`ZoteroGroup` struct** and `getGroups()` / `resolveLibraryID(groupID:)` methods (`ZoteroReader.swift`) — Query the local SQLite `groups` table to list synced group libraries and resolve groupID → internal libraryID.
+- **`libraryID` filtering** in `ZoteroReader` — `search()`, `getCollections()`, `getTags()`, `getRecent()`, `getAllItems()`, `searchByDOI()` now accept optional `libraryID` parameter. When nil (default), queries all libraries (backward compatible). When set, filters to the specified library.
+
+### Changed
+- Version bump: 1.10.0 → 1.11.0
+- Tool count: 34 → 35
+- All `ZoteroWebAPI` write methods now accept optional `target: LibraryTarget = .user` parameter
+
 ## [1.10.0] - 2026-03-06
 
 ### Added

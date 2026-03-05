@@ -117,6 +117,14 @@ struct WriteResponseError: Codable {
     let message: String
 }
 
+// MARK: - Library Target
+
+/// Specifies which library to operate on: personal or a group library.
+public enum LibraryTarget {
+    case user
+    case group(Int) // groupID
+}
+
 // MARK: - ZoteroWebAPI
 
 public class ZoteroWebAPI {
@@ -175,19 +183,60 @@ public class ZoteroWebAPI {
         return userId
     }
 
+    // MARK: - Library Path
+
+    /// Returns the API path prefix for a library target.
+    func libraryPath(for target: LibraryTarget = .user) -> String {
+        switch target {
+        case .user:
+            return "/users/\(userId)"
+        case .group(let groupId):
+            return "/groups/\(groupId)"
+        }
+    }
+
+    // MARK: - Groups
+
+    /// List all groups the user has access to.
+    public func listGroups() async throws -> [(groupID: Int, name: String, memberCount: Int)] {
+        let url = URL(string: "\(baseURL)/users/\(userId)/groups")!
+        var request = makeRequest(method: "GET", url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw ZoteroWebAPIError.httpError(code, "Failed to list groups")
+        }
+
+        guard let groups = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
+        }
+
+        return groups.compactMap { group in
+            guard let id = group["id"] as? Int,
+                  let groupData = group["data"] as? [String: Any],
+                  let name = groupData["name"] as? String else { return nil }
+            let memberCount = (groupData["members"] as? [Any])?.count ?? 0
+            return (groupID: id, name: name, memberCount: memberCount)
+        }
+    }
+
     // MARK: - Collections
 
     /// Create a new collection (idempotent: skips if same name exists at same level).
-    public func createCollection(name: String, parentKey: String? = nil) async throws -> (key: String, version: Int, isDuplicate: Bool) {
+    public func createCollection(name: String, parentKey: String? = nil, target: LibraryTarget = .user) async throws -> (key: String, version: Int, isDuplicate: Bool) {
         // Idempotency check: search for existing collection with same name at same level
-        if let existing = try await findCollection(name: name, parentKey: parentKey) {
+        if let existing = try await findCollection(name: name, parentKey: parentKey, target: target) {
             return (key: existing.key, version: existing.version, isDuplicate: true)
         }
 
         var collectionData: [String: Any] = ["name": name]
         collectionData["parentCollection"] = parentKey ?? false
 
-        let result = try await post(path: "/users/\(userId)/collections", body: [collectionData])
+        let result = try await post(path: "\(libraryPath(for: target))/collections", body: [collectionData])
 
         guard let successful = result["successful"] as? [String: Any],
               let first = successful["0"] as? [String: Any],
@@ -206,8 +255,8 @@ public class ZoteroWebAPI {
     }
 
     /// Find a collection by name and parent (for idempotency check).
-    private func findCollection(name: String, parentKey: String?) async throws -> (key: String, version: Int)? {
-        let url = URL(string: "\(baseURL)/users/\(userId)/collections")!
+    private func findCollection(name: String, parentKey: String?, target: LibraryTarget = .user) async throws -> (key: String, version: Int)? {
+        let url = URL(string: "\(baseURL)\(libraryPath(for: target))/collections")!
         var request = makeRequest(method: "GET", url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -234,15 +283,15 @@ public class ZoteroWebAPI {
     }
 
     /// Delete a collection.
-    public func deleteCollection(collectionKey: String, version: Int) async throws {
-        try await delete(path: "/users/\(userId)/collections/\(collectionKey)", version: version)
+    public func deleteCollection(collectionKey: String, version: Int, target: LibraryTarget = .user) async throws {
+        try await delete(path: "\(libraryPath(for: target))/collections/\(collectionKey)", version: version)
     }
 
     // MARK: - Items
 
     /// Create a new item with explicit fields.
-    public func createItem(_ itemData: [String: Any]) async throws -> (key: String, version: Int) {
-        let result = try await post(path: "/users/\(userId)/items", body: [itemData])
+    public func createItem(_ itemData: [String: Any], target: LibraryTarget = .user) async throws -> (key: String, version: Int) {
+        let result = try await post(path: "\(libraryPath(for: target))/items", body: [itemData])
 
         guard let successful = result["successful"] as? [String: Any],
               let first = successful["0"] as? [String: Any],
@@ -272,7 +321,8 @@ public class ZoteroWebAPI {
         issue: String? = nil,
         pages: String? = nil,
         tags: [String] = [],
-        collectionKeys: [String] = []
+        collectionKeys: [String] = [],
+        target: LibraryTarget = .user
     ) async throws -> (key: String, version: Int) {
         var itemData: [String: Any] = [
             "itemType": "journalArticle",
@@ -305,36 +355,36 @@ public class ZoteroWebAPI {
             itemData["collections"] = collectionKeys
         }
 
-        return try await createItem(itemData)
+        return try await createItem(itemData, target: target)
     }
 
     /// Add an item to one or more collections by updating its collections field.
     /// Requires the item's current version (from local SQLite or a previous API call).
-    public func addItemToCollection(itemKey: String, collectionKeys: [String], currentVersion: Int) async throws {
+    public func addItemToCollection(itemKey: String, collectionKeys: [String], currentVersion: Int, target: LibraryTarget = .user) async throws {
         // PATCH only updates specified fields
         let body: [String: Any] = ["collections": collectionKeys]
-        try await patch(path: "/users/\(userId)/items/\(itemKey)", body: body, version: currentVersion)
+        try await patch(path: "\(libraryPath(for: target))/items/\(itemKey)", body: body, version: currentVersion)
     }
 
     /// Update tags on an item.
-    public func updateTags(itemKey: String, tags: [String], currentVersion: Int) async throws {
+    public func updateTags(itemKey: String, tags: [String], currentVersion: Int, target: LibraryTarget = .user) async throws {
         let body: [String: Any] = ["tags": tags.map { ["tag": $0] }]
-        try await patch(path: "/users/\(userId)/items/\(itemKey)", body: body, version: currentVersion)
+        try await patch(path: "\(libraryPath(for: target))/items/\(itemKey)", body: body, version: currentVersion)
     }
 
     /// Update arbitrary fields on an item (PATCH).
-    public func patchItem(itemKey: String, fields: [String: Any], version: Int) async throws {
-        try await patch(path: "/users/\(userId)/items/\(itemKey)", body: fields, version: version)
+    public func patchItem(itemKey: String, fields: [String: Any], version: Int, target: LibraryTarget = .user) async throws {
+        try await patch(path: "\(libraryPath(for: target))/items/\(itemKey)", body: fields, version: version)
     }
 
     /// Delete an item.
-    public func deleteItem(itemKey: String, version: Int) async throws {
-        try await delete(path: "/users/\(userId)/items/\(itemKey)", version: version)
+    public func deleteItem(itemKey: String, version: Int, target: LibraryTarget = .user) async throws {
+        try await delete(path: "\(libraryPath(for: target))/items/\(itemKey)", version: version)
     }
 
-    /// Get an item's current version from the API (needed for updates).
-    public func getCollectionVersion(collectionKey: String) async throws -> Int {
-        let url = URL(string: "\(baseURL)/users/\(userId)/collections/\(collectionKey)")!
+    /// Get a collection's current version from the API (needed for updates).
+    public func getCollectionVersion(collectionKey: String, target: LibraryTarget = .user) async throws -> Int {
+        let url = URL(string: "\(baseURL)\(libraryPath(for: target))/collections/\(collectionKey)")!
         var request = makeRequest(method: "GET", url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -353,8 +403,8 @@ public class ZoteroWebAPI {
         return version
     }
 
-    public func getItemVersion(itemKey: String) async throws -> Int {
-        let url = URL(string: "\(baseURL)/users/\(userId)/items/\(itemKey)")!
+    public func getItemVersion(itemKey: String, target: LibraryTarget = .user) async throws -> Int {
+        let url = URL(string: "\(baseURL)\(libraryPath(for: target))/items/\(itemKey)")!
         var request = makeRequest(method: "GET", url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -403,14 +453,14 @@ public class ZoteroWebAPI {
     // MARK: - Search (for idempotency)
 
     /// Search items by DOI via Zotero Web API (for idempotency check).
-    public func searchItemByDOI(doi: String) async throws -> (key: String, version: Int)? {
+    public func searchItemByDOI(doi: String, target: LibraryTarget = .user) async throws -> (key: String, version: Int)? {
         let cleanDOI = doi
             .replacingOccurrences(of: "https://doi.org/", with: "")
             .replacingOccurrences(of: "http://doi.org/", with: "")
 
         guard !cleanDOI.isEmpty else { return nil }
 
-        var components = URLComponents(string: "\(baseURL)/users/\(userId)/items")!
+        var components = URLComponents(string: "\(baseURL)\(libraryPath(for: target))/items")!
         components.queryItems = [
             URLQueryItem(name: "itemType", value: "-attachment || note"),
             URLQueryItem(name: "q", value: cleanDOI),
@@ -448,10 +498,11 @@ public class ZoteroWebAPI {
         doi: String,
         collectionKeys: [String] = [],
         tags: [String] = [],
-        academicClient: AcademicSearchClient
+        academicClient: AcademicSearchClient,
+        target: LibraryTarget = .user
     ) async throws -> (key: String, summary: String, isDuplicate: Bool) {
         let resolver = DOIResolver(academic: academicClient)
-        return try await addItemByDOI(doi: doi, collectionKeys: collectionKeys, tags: tags, resolver: resolver)
+        return try await addItemByDOI(doi: doi, collectionKeys: collectionKeys, tags: tags, resolver: resolver, target: target)
     }
 
     /// Look up a DOI via the universal DOI resolver and create the item in Zotero (idempotent).
@@ -461,16 +512,17 @@ public class ZoteroWebAPI {
         doi: String,
         collectionKeys: [String] = [],
         tags: [String] = [],
-        resolver: DOIResolver
+        resolver: DOIResolver,
+        target: LibraryTarget = .user
     ) async throws -> (key: String, summary: String, isDuplicate: Bool) {
         // Idempotency check: search by DOI in Zotero Web API
-        if let existing = try? await searchItemByDOI(doi: doi) {
+        if let existing = try? await searchItemByDOI(doi: doi, target: target) {
             return (key: existing.key, summary: "DOI \(doi) already exists [key: \(existing.key)]", isDuplicate: true)
         }
 
         let metadata = try await resolver.resolve(doi: doi)
         let itemData = metadata.toZoteroItemData(collectionKeys: collectionKeys, tags: tags)
-        let result = try await createItem(itemData)
+        let result = try await createItem(itemData, target: target)
 
         let authorStr = metadata.creators.prefix(3).map { c in
             if let name = c.name { return name }
@@ -492,7 +544,8 @@ public class ZoteroWebAPI {
     public func addAttachment(
         parentItemKey: String,
         filePath: String,
-        title: String? = nil
+        title: String? = nil,
+        target: LibraryTarget = .user
     ) async throws -> (attachmentKey: String, filename: String) {
         let fileURL = URL(fileURLWithPath: filePath)
         let filename = fileURL.lastPathComponent
@@ -520,7 +573,7 @@ public class ZoteroWebAPI {
             "tags": [] as [[String: Any]]
         ]
 
-        let createResult = try await post(path: "/users/\(userId)/items", body: [attachmentData])
+        let createResult = try await post(path: "\(libraryPath(for: target))/items", body: [attachmentData])
 
         guard let successful = createResult["successful"] as? [String: Any],
               let first = successful["0"] as? [String: Any],
@@ -538,7 +591,7 @@ public class ZoteroWebAPI {
         let filesize = fileData.count
         let mtime = Int(Date().timeIntervalSince1970 * 1000)
 
-        let authURL = URL(string: "\(baseURL)/users/\(userId)/items/\(attachmentKey)/file")!
+        let authURL = URL(string: "\(baseURL)\(libraryPath(for: target))/items/\(attachmentKey)/file")!
         var authRequest = makeRequest(method: "POST", url: authURL)
         authRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         authRequest.setValue("*", forHTTPHeaderField: "If-None-Match")
@@ -596,7 +649,7 @@ public class ZoteroWebAPI {
         }
 
         // Step 4: Register upload
-        let registerURL = URL(string: "\(baseURL)/users/\(userId)/items/\(attachmentKey)/file")!
+        let registerURL = URL(string: "\(baseURL)\(libraryPath(for: target))/items/\(attachmentKey)/file")!
         var registerRequest = makeRequest(method: "POST", url: registerURL)
         registerRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         registerRequest.setValue("*", forHTTPHeaderField: "If-None-Match")
