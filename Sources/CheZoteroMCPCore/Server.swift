@@ -27,7 +27,7 @@ public class CheZoteroMCPServer {
 
         server = Server(
             name: "che-zotero-mcp",
-            version: "1.3.1",
+            version: "1.3.2",
             capabilities: .init(tools: .init())
         )
 
@@ -158,7 +158,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "zotero_search_by_doi",
-                description: "[YOUR LIBRARY] Check if a paper with a specific DOI exists in your saved Zotero items. Returns the item's metadata if found. Use when verifying a paper is already saved or checking for duplicates. To look up a paper's metadata from external academic sources by DOI, use academic_get_paper instead.",
+                description: "[YOUR LIBRARY] Check if a paper with a specific DOI exists in your saved Zotero items. Returns the item's metadata if found. Use when verifying a paper is already saved or checking for duplicates. To look up a paper's metadata from external academic sources by DOI, use academic_lookup_doi instead.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -205,7 +205,7 @@ public class CheZoteroMCPServer {
                 ])
             ),
             Tool(
-                name: "academic_get_paper",
+                name: "academic_lookup_doi",
                 description: "[EXTERNAL DATABASE] Look up a paper's full metadata from OpenAlex by DOI. Returns abstract, authors, affiliations, citation count, and open access info. This is read-only — it does NOT save the paper to Zotero. Use when the user wants information about a paper they haven't saved. To add a paper to Zotero by DOI, use zotero_add_item_by_doi. To check if a DOI is already in your library, use zotero_search_by_doi.",
                 inputSchema: .object([
                     "type": .string("object"),
@@ -220,7 +220,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "academic_get_citations",
-                description: "[EXTERNAL DATABASE] Get papers that cite a given work — forward citation tracking via OpenAlex. Use when exploring a paper's academic impact or finding follow-up research. Requires OpenAlex ID from academic_search or academic_get_paper results.",
+                description: "[EXTERNAL DATABASE] Get papers that cite a given work — forward citation tracking via OpenAlex. Use when exploring a paper's academic impact or finding follow-up research. Requires OpenAlex ID from academic_search or academic_lookup_doi results.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -238,7 +238,7 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "academic_get_references",
-                description: "[EXTERNAL DATABASE] Get papers referenced by a given work — backward reference tracking via OpenAlex. Use when exploring a paper's theoretical foundations or finding seminal works. Requires OpenAlex ID from academic_search or academic_get_paper results.",
+                description: "[EXTERNAL DATABASE] Get papers referenced by a given work — backward reference tracking via OpenAlex. Use when exploring a paper's theoretical foundations or finding seminal works. Requires OpenAlex ID from academic_search or academic_lookup_doi results.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
@@ -384,7 +384,7 @@ public class CheZoteroMCPServer {
                 ),
                 Tool(
                     name: "zotero_add_item_by_doi",
-                    description: "[YOUR LIBRARY · WRITE] Add a paper to your Zotero library by DOI. Resolves metadata from external sources (OpenAlex → doi.org → Airiti) and creates a new item. Skips if DOI already exists (idempotent). Use when the user wants to SAVE a paper. To just look up info without saving, use academic_get_paper instead.",
+                    description: "[YOUR LIBRARY · WRITE] Add a paper to your Zotero library by DOI. Resolves metadata from external sources (OpenAlex → doi.org → Airiti) and creates a new item. Skips if DOI already exists (idempotent). Use when the user wants to SAVE a paper. To just look up info without saving, use academic_lookup_doi instead.",
                     inputSchema: .object([
                         "type": .string("object"),
                         "properties": .object([
@@ -541,7 +541,7 @@ public class CheZoteroMCPServer {
             // Academic Search Tools
             case "academic_search":
                 return try await handleAcademicSearch(params)
-            case "academic_get_paper":
+            case "academic_lookup_doi":
                 return try await handleAcademicGetPaper(params)
             case "academic_get_citations":
                 return try await handleAcademicGetCitations(params)

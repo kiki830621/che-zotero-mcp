@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2] - 2026-03-05
+
+### Changed
+- **Rename `academic_get_paper` → `academic_lookup_doi`** — "lookup" clearly conveys read-only DOI metadata retrieval, reducing confusion with write tools like `zotero_add_item_by_doi`
+- **`academic_lookup_doi` now uses DOIResolver cascade fallback** — previously only queried OpenAlex; now falls back to doi.org content negotiation → Airiti when OpenAlex doesn't have the DOI. Covers all 12 DOI Registration Agencies. Response includes `[Source: ...]` tag indicating data origin.
+- Version bump: 1.3.1 → 1.3.2
+
 ## [1.3.1] - 2026-03-05
 
 ### Changed

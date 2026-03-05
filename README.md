@@ -122,7 +122,7 @@ Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable lib
 | Tool | Description |
 |------|-------------|
 | `academic_search` | Search external literature (OpenAlex, 250M+ papers) |
-| `academic_get_paper` | Get full paper metadata by DOI |
+| `academic_lookup_doi` | Get full paper metadata by DOI |
 | `academic_get_citations` | Forward citation tracking |
 | `academic_get_references` | Backward reference tracking |
 | `academic_search_author` | Search papers by author name |
@@ -146,9 +146,9 @@ All tool descriptions include scope tags (`[YOUR LIBRARY]`, `[EXTERNAL DATABASE]
 |-----------|--------|-------------|----------|
 | "Do I have this paper?" | Check existing library | `zotero_search` / `zotero_search_by_doi` | ~~academic_search~~ |
 | "Find papers about X" | Discover new research | `academic_search` | ~~zotero_search~~ |
-| "What is DOI 10.xxx?" | Look up paper info | `academic_get_paper` | ~~zotero_search_by_doi~~ |
-| "Is this DOI in my library?" | Check if saved | `zotero_search_by_doi` | ~~academic_get_paper~~ |
-| "Save this paper" | Add to Zotero | `zotero_add_item_by_doi` | ~~academic_get_paper~~ |
+| "What is DOI 10.xxx?" | Look up paper info | `academic_lookup_doi` | ~~zotero_search_by_doi~~ |
+| "Is this DOI in my library?" | Check if saved | `zotero_search_by_doi` | ~~academic_lookup_doi~~ |
+| "Save this paper" | Add to Zotero | `zotero_add_item_by_doi` | ~~academic_lookup_doi~~ |
 | "Papers by Dr. Smith" | Author exploration | `academic_search_author` | ~~zotero_search~~ |
 | "What did I read about X?" | Recall from library | `zotero_semantic_search` | ~~academic_search~~ |
 
@@ -184,7 +184,7 @@ Each tool connects to one of three data sources. Understanding this helps troubl
 | `zotero_add_to_collection` | Zotero Web API | Requires `ZOTERO_API_KEY` |
 | `zotero_delete_item` | Zotero Web API | Requires `ZOTERO_API_KEY` |
 | `academic_search` | OpenAlex API | 250M+ papers, free |
-| `academic_get_paper` | OpenAlex API | Lookup by DOI |
+| `academic_lookup_doi` | OpenAlex API | Lookup by DOI |
 | `academic_get_citations` | OpenAlex API | Forward citations |
 | `academic_get_references` | OpenAlex API | Backward references |
 | `academic_search_author` | OpenAlex API | Search by author name |

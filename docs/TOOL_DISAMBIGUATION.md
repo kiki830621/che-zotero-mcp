@@ -9,9 +9,9 @@ che-zotero-mcp has 24 tools across three data domains. When a user says somethin
 | User says | Possible intent A | Possible intent B |
 |-----------|-------------------|-------------------|
 | "Help me find this paper" | `zotero_search` (check if already saved) | `academic_search` (discover from external DB) |
-| "What is DOI 10.xxx?" | `zotero_search_by_doi` (check my library) | `academic_get_paper` (look up metadata) |
+| "What is DOI 10.xxx?" | `zotero_search_by_doi` (check my library) | `academic_lookup_doi` (look up metadata) |
 | "Papers by Dr. Smith" | `zotero_search` (in my collection) | `academic_search_author` (explore globally) |
-| "This paper's info" | `zotero_get_metadata` (saved item) | `academic_get_paper` (external lookup) |
+| "This paper's info" | `zotero_get_metadata` (saved item) | `academic_lookup_doi` (external lookup) |
 
 ## Design: Three-Layer Disambiguation
 
@@ -82,7 +82,7 @@ This creates **bidirectional disambiguation** — no matter which tool the AI co
 
 ┌──────────────────────────────────────────────────────────────┐
 │                 [EXTERNAL DATABASE]                            │
-│  academic_search        academic_get_paper                    │
+│  academic_search        academic_lookup_doi                    │
 │  academic_get_citations academic_get_references               │
 │  academic_search_author orcid_get_publications                │
 └──────────────────────────────────────────────────────────────┘
@@ -100,10 +100,10 @@ This creates **bidirectional disambiguation** — no matter which tool the AI co
 |------------------------|-------------------|----------------------|
 | `zotero_search` | `academic_search` | "papers in collection" vs "discover NEW papers" |
 | `zotero_semantic_search` | `academic_search` | "can't recall title" vs "explore topic" |
-| `zotero_search_by_doi` | `academic_get_paper` | "is this saved?" vs "what is this paper?" |
-| `zotero_get_metadata` | `academic_get_paper` | "item key known" vs "DOI lookup" |
+| `zotero_search_by_doi` | `academic_lookup_doi` | "is this saved?" vs "what is this paper?" |
+| `zotero_get_metadata` | `academic_lookup_doi` | "item key known" vs "DOI lookup" |
 | — | `academic_search_author` vs `orcid_get_publications` | "explore globally" vs "researcher's curated list" |
-| `academic_get_paper` | `zotero_add_item_by_doi` | "read-only lookup" vs "save to library" |
+| `academic_lookup_doi` | `zotero_add_item_by_doi` | "read-only lookup" vs "save to library" |
 
 ## Decision Flow
 
@@ -115,7 +115,7 @@ User request → Does it mention a specific item_key?
       YES → zotero_add_item_by_doi (WRITE)
       NO  → Does the user want to CHECK if it's saved?
         YES → zotero_search_by_doi (YOUR LIBRARY)
-        NO  → academic_get_paper (EXTERNAL)
+        NO  → academic_lookup_doi (EXTERNAL)
     NO  → Is the user looking for papers they ALREADY HAVE?
       YES → zotero_search or zotero_semantic_search (YOUR LIBRARY)
       NO  → Is the user exploring AUTHOR publications?

@@ -27,11 +27,37 @@ extension CheZoteroMCPServer {
     func handleAcademicGetPaper(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         let doi = params.arguments?["doi"]?.stringValue ?? ""
 
-        guard let work = try await academic.getWork(doi: doi) else {
-            return CallTool.Result(content: [.text("Paper not found for DOI: \(doi)")], isError: false)
+        // 1. Try OpenAlex first (richest metadata: citations, OA links, OpenAlex ID)
+        if let work = try? await academic.getWork(doi: doi) {
+            return CallTool.Result(content: [.text(work.detail() + "\n\n[Source: OpenAlex]")], isError: false)
         }
 
-        return CallTool.Result(content: [.text(work.detail())], isError: false)
+        // 2. Fallback to DOIResolver cascade (doi.org → Airiti — more authoritative, wider coverage)
+        if let resolved = try? await doiResolver.resolve(doi: doi) {
+            var lines = [
+                "Title: \(resolved.title)",
+                "DOI: \(resolved.doi)",
+            ]
+            if !resolved.creators.isEmpty {
+                let authors = resolved.creators.map { c in
+                    if let name = c.name { return name }
+                    return [c.firstName, c.lastName].compactMap { $0 }.joined(separator: " ")
+                }
+                lines.append("Authors: \(authors.joined(separator: ", "))")
+            }
+            if let pub = resolved.publicationTitle { lines.append("Journal: \(pub)") }
+            if let date = resolved.date { lines.append("Date: \(date)") }
+            if let abs = resolved.abstractNote { lines.append("Abstract: \(abs)") }
+            if let vol = resolved.volume { lines.append("Volume: \(vol)") }
+            if let iss = resolved.issue { lines.append("Issue: \(iss)") }
+            if let pgs = resolved.pages { lines.append("Pages: \(pgs)") }
+            if let url = resolved.url { lines.append("URL: \(url)") }
+            lines.append("Type: \(resolved.itemType)")
+            lines.append("\n[Source: \(resolved.source) — Note: OpenAlex did not have this DOI, so citation count and OA info are unavailable]")
+            return CallTool.Result(content: [.text(lines.joined(separator: "\n"))], isError: false)
+        }
+
+        return CallTool.Result(content: [.text("Paper not found for DOI: \(doi). Tried OpenAlex and doi.org content negotiation.")], isError: false)
     }
 
     func handleAcademicGetCitations(_ params: CallTool.Parameters) async throws -> CallTool.Result {
