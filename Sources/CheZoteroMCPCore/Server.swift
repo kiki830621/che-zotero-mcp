@@ -29,7 +29,7 @@ public class CheZoteroMCPServer {
 
         server = Server(
             name: "che-zotero-mcp",
-            version: "1.7.0",
+            version: "1.8.0",
             capabilities: .init(tools: .init())
         )
 
@@ -642,6 +642,29 @@ public class CheZoteroMCPServer {
                         "required": .array([.string("collection_key")])
                     ])
                 ),
+                Tool(
+                    name: "zotero_normalize_titles",
+                    description: "[YOUR LIBRARY · WRITE] Batch convert Title Case titles to sentence case with proper noun preservation. Most Zotero imports store titles in Title Case (from publishers), but APA 7 / biblatex-apa require sentence case. This tool: (1) detects Title Case titles, (2) converts to sentence case, (3) preserves proper nouns (countries, nationalities, eponyms like Bayesian/Freudian, acronyms). Use dry_run=true (default) to preview changes before writing. Provide item_keys or collection_key to select items.",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "item_keys": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("string")]),
+                                "description": .string("Zotero item keys to normalize")
+                            ]),
+                            "collection_key": .object([
+                                "type": .string("string"),
+                                "description": .string("Collection key — normalize all items in collection")
+                            ]),
+                            "dry_run": .object([
+                                "type": .string("boolean"),
+                                "description": .string("Preview changes without writing (default: true). Set to false to apply changes via Zotero Web API.")
+                            ])
+                        ]),
+                        "required": .array([])
+                    ])
+                ),
             ])
         }
 
@@ -742,6 +765,8 @@ public class CheZoteroMCPServer {
                 return try await handleDeleteItem(params)
             case "zotero_delete_collection":
                 return try await handleDeleteCollection(params)
+            case "zotero_normalize_titles":
+                return try await handleNormalizeTitles(params)
 
             default:
                 return CallTool.Result(content: [.text("Unknown tool: \(params.name)")], isError: true)

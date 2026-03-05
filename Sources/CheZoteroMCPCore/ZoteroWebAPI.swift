@@ -321,6 +321,11 @@ public class ZoteroWebAPI {
         try await patch(path: "/users/\(userId)/items/\(itemKey)", body: body, version: currentVersion)
     }
 
+    /// Update arbitrary fields on an item (PATCH).
+    public func patchItem(itemKey: String, fields: [String: Any], version: Int) async throws {
+        try await patch(path: "/users/\(userId)/items/\(itemKey)", body: fields, version: version)
+    }
+
     /// Delete an item.
     public func deleteItem(itemKey: String, version: Int) async throws {
         try await delete(path: "/users/\(userId)/items/\(itemKey)", version: version)

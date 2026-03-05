@@ -179,6 +179,85 @@ extension CheZoteroMCPServer {
         )
     }
 
+    func handleNormalizeTitles(_ params: CallTool.Parameters) async throws -> CallTool.Result {
+        if let err = requireWebAPI() { return err }
+        let api = webAPI!
+
+        let dryRun = params.arguments?["dry_run"]?.boolValue ?? true
+
+        // Resolve items
+        var items: [ZoteroItem] = []
+        if let keysValue = params.arguments?["item_keys"],
+           case .array(let keysArray) = keysValue {
+            let keys = keysArray.compactMap(\.stringValue)
+            items = try keys.compactMap { try reader.getItem(key: $0) }
+        } else if let collKey = params.arguments?["collection_key"]?.stringValue, !collKey.isEmpty {
+            items = try reader.getItemsInCollection(collectionKey: collKey, limit: 500)
+        }
+
+        if items.isEmpty {
+            return CallTool.Result(
+                content: [.text("No items found. Provide item_keys or collection_key.")],
+                isError: true
+            )
+        }
+
+        let results = TitleNormalizer.normalizeBatch(items)
+        let changed = results.filter { $0.changed }
+
+        if changed.isEmpty {
+            return CallTool.Result(
+                content: [.text("All \(items.count) titles are already in sentence case. No changes needed.")],
+                isError: false
+            )
+        }
+
+        var output: [String] = []
+        output.append("## Title Normalization \(dryRun ? "(DRY RUN)" : "(APPLIED)")")
+        output.append("Items scanned: \(items.count)")
+        output.append("Titles to change: \(changed.count)")
+        output.append("Already sentence case: \(items.count - changed.count)")
+        output.append("")
+
+        var writeErrors: [String] = []
+
+        for result in changed {
+            output.append("### [\(result.itemKey)]")
+            output.append("  Before: \(result.originalTitle)")
+            output.append("  After:  \(result.normalizedTitle)")
+            if !result.protectedWords.isEmpty {
+                output.append("  Protected: \(result.protectedWords.joined(separator: ", "))")
+            }
+
+            if !dryRun {
+                do {
+                    let version = try await api.getItemVersion(itemKey: result.itemKey)
+                    let body: [String: Any] = ["title": result.normalizedTitle]
+                    try await api.patchItem(itemKey: result.itemKey, fields: body, version: version)
+                    output.append("  Status: ✓ Updated")
+                } catch {
+                    output.append("  Status: ✗ Error: \(error.localizedDescription)")
+                    writeErrors.append(result.itemKey)
+                }
+            }
+            output.append("")
+        }
+
+        if !dryRun {
+            output.append("---")
+            output.append("Updated: \(changed.count - writeErrors.count) / \(changed.count)")
+            if !writeErrors.isEmpty {
+                output.append("Failed: \(writeErrors.joined(separator: ", "))")
+            }
+            output.append("Note: Zotero desktop will sync on next cycle to reflect changes locally.")
+        } else {
+            output.append("---")
+            output.append("This is a preview. Set dry_run=false to apply changes via Zotero Web API.")
+        }
+
+        return CallTool.Result(content: [.text(output.joined(separator: "\n"))], isError: false)
+    }
+
     func handleDeleteItem(_ params: CallTool.Parameters) async throws -> CallTool.Result {
         if let err = requireWebAPI() { return err }
         let api = webAPI!

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.8.0] - 2026-03-05
+
+### Added
+- **New tool: `zotero_normalize_titles`** — Batch convert Title Case titles to APA-compliant sentence case with proper noun preservation. Most Zotero imports deliver Title Case from publishers; APA 7 and biblatex-apa require sentence case. The tool: (1) detects Title Case vs sentence case titles, (2) converts to sentence case, (3) preserves proper nouns using a built-in list of ~500 terms, (4) supports `dry_run` preview before writing. Writes via Zotero Web API.
+- **`ProperNounList.swift`** — Built-in list of ~500 proper nouns organized by category: country/territory names (ISO 3166), nationality/language adjectives, academic eponyms (Bayesian, Freudian, Marxist, Pavlovian, etc.), religions, and historical periods. Used by both `protectProperNouns` (biblatex output) and `zotero_normalize_titles` (title correction).
+- **`TitleNormalizer.swift`** — Title Case → sentence case conversion engine. Preserves: ALL CAPS acronyms, camelCase words, known proper nouns, dotted abbreviations, and post-colon capitalization. Skips non-English titles and titles already in sentence case.
+- **Sentence case detection heuristic** — `BiblatexAPAFormatter.detectSentenceCase()` computes the ratio of capitalized content words; <40% → sentence case (auto-brace all non-initial capitals), ≥40% → Title Case (brace only known proper nouns and detected patterns).
+- **`ZoteroWebAPI.patchItem()`** — Generic PATCH method for updating arbitrary item fields.
+
+### Changed
+- Version bump: 1.7.0 → 1.8.0
+- Tool count: 31 → 32 (write tools: 6 → 7)
+- `BiblatexAPAFormatter.protectProperNouns()` now uses two-strategy approach based on detected casing:
+  - Sentence case titles: auto-braces all non-initial capitalized words
+  - Title Case titles: braces known proper nouns from `ProperNounList` + existing pattern detection (acronyms, abbreviations, camelCase)
+- Biblatex header comment updated to mention proper noun auto-protection and recommend `zotero_normalize_titles`
+
 ## [1.7.0] - 2026-03-05
 
 ### Added

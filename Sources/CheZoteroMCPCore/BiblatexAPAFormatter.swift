@@ -206,13 +206,16 @@ public struct BiblatexAPAFormatter {
 
     /// H1: Protect proper nouns and acronyms with braces for biblatex.
     /// biblatex-apa lowercases English titles; braced words are preserved.
-    /// Protects: 2+ uppercase sequences (ADHD), dotted abbreviations (U.S.),
-    /// and camelCase words (iPhone, macOS). Single-word proper nouns (country/person
-    /// names) cannot be reliably auto-detected and may need manual review.
+    ///
+    /// Strategy depends on detected title casing:
+    /// - **Sentence case** (<40% words capitalized): auto-brace all non-initial
+    ///   capitalized words (they're likely proper nouns).
+    /// - **Title Case** (≥40% words capitalized): brace only detectable patterns
+    ///   (acronyms, abbreviations, camelCase) + known proper nouns from ProperNounList.
     static func protectProperNouns(_ text: String) -> String {
         var result = text
 
-        // 1. Protect sequences of 2+ uppercase letters (acronyms: ADHD, LGBTQ, USA, NYC)
+        // 1. Always protect sequences of 2+ uppercase letters (acronyms: ADHD, LGBTQ, USA, NYC)
         let acronymPattern = try! NSRegularExpression(pattern: "\\b([A-Z]{2,})\\b")
         let acronymMatches = acronymPattern.matches(in: result, range: NSRange(result.startIndex..., in: result))
         for match in acronymMatches.reversed() {
@@ -222,7 +225,7 @@ public struct BiblatexAPAFormatter {
             }
         }
 
-        // 2. Protect dotted abbreviations (U.S., U.K., Dr., e.g.)
+        // 2. Always protect dotted abbreviations (U.S., U.K., Dr., e.g.)
         let dottedPattern = try! NSRegularExpression(pattern: "(?<![{])\\b([A-Z]\\.(?:[A-Za-z]\\.)+)")
         let dottedMatches = dottedPattern.matches(in: result, range: NSRange(result.startIndex..., in: result))
         for match in dottedMatches.reversed() {
@@ -232,13 +235,112 @@ public struct BiblatexAPAFormatter {
             }
         }
 
-        // 3. Protect words with internal uppercase (iPhone, macOS, LaTeX, YouTube, GitHub)
+        // 3. Always protect words with internal uppercase (iPhone, macOS, LaTeX, YouTube, GitHub)
         let camelPattern = try! NSRegularExpression(pattern: "(?<![{])\\b([a-z]+[A-Z][a-zA-Z]*)\\b")
         let camelMatches = camelPattern.matches(in: result, range: NSRange(result.startIndex..., in: result))
         for match in camelMatches.reversed() {
             if let range = Range(match.range(at: 1), in: result) {
                 let word = String(result[range])
                 result.replaceSubrange(range, with: "{\(word)}")
+            }
+        }
+
+        // 4. Detect title casing and apply appropriate strategy
+        let isSentenceCase = detectSentenceCase(text)
+
+        if isSentenceCase {
+            // Sentence case: any non-initial capitalized word is likely a proper noun → brace it
+            result = protectSentenceCaseCapitals(result)
+        } else {
+            // Title Case: can only protect known proper nouns from the list
+            result = protectKnownProperNouns(result)
+        }
+
+        return result
+    }
+
+    /// Detect whether a title is in sentence case (vs Title Case).
+    /// Heuristic: if <40% of content words start with uppercase → sentence case.
+    static func detectSentenceCase(_ text: String) -> Bool {
+        let words = text.components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+
+        // Need at least 3 words to make a judgement
+        guard words.count >= 3 else { return false }
+
+        // Skip first word (always capitalized) and short function words
+        let shortWords: Set<String> = ["a", "an", "the", "and", "or", "but", "in",
+                                        "on", "at", "to", "for", "of", "by", "with",
+                                        "from", "as", "is", "was", "are", "were",
+                                        "not", "nor", "so", "yet", "vs", "vs."]
+        let contentWords = words.dropFirst().filter { word in
+            let clean = word.trimmingCharacters(in: .punctuationCharacters).lowercased()
+            return clean.count > 1 && !shortWords.contains(clean)
+        }
+
+        guard !contentWords.isEmpty else { return false }
+
+        let capitalizedCount = contentWords.filter { word in
+            guard let first = word.first else { return false }
+            return first.isUppercase
+        }.count
+
+        let ratio = Double(capitalizedCount) / Double(contentWords.count)
+        return ratio < 0.40
+    }
+
+    /// For sentence case titles: brace any word starting with uppercase (after position 0),
+    /// since in sentence case those are almost certainly proper nouns.
+    /// Skips words already braced.
+    static func protectSentenceCaseCapitals(_ text: String) -> String {
+        // Match capitalized words that aren't already inside braces
+        let pattern = try! NSRegularExpression(pattern: "(?<![{A-Za-z])([A-Z][a-z]+)(?![}])")
+        var result = text
+        let matches = pattern.matches(in: result, range: NSRange(result.startIndex..., in: result))
+
+        // Skip the very first word of the text (always capitalized in any case)
+        let firstWordEnd = text.firstIndex(where: { $0 == " " }) ?? text.endIndex
+        let firstWordRange = text.startIndex..<firstWordEnd
+
+        for match in matches.reversed() {
+            if let range = Range(match.range(at: 1), in: result) {
+                // Skip if this is the first word
+                if range.lowerBound < firstWordRange.upperBound { continue }
+                let word = String(result[range])
+                // Skip if already braced (check character before)
+                if range.lowerBound > result.startIndex {
+                    let before = result[result.index(before: range.lowerBound)]
+                    if before == "{" { continue }
+                }
+                result.replaceSubrange(range, with: "{\(word)}")
+            }
+        }
+
+        return result
+    }
+
+    /// For Title Case titles: protect words that match the known proper noun list.
+    static func protectKnownProperNouns(_ text: String) -> String {
+        var result = text
+        let words = text.components(separatedBy: .whitespaces)
+
+        for word in words {
+            let cleaned = word.trimmingCharacters(in: .punctuationCharacters)
+            guard !cleaned.isEmpty, cleaned.first?.isUppercase == true else { continue }
+            // Skip if already braced
+            if word.hasPrefix("{") { continue }
+
+            if ProperNounList.isProperNoun(cleaned) {
+                // Replace the first occurrence of this word that isn't already braced
+                if let range = result.range(of: cleaned) {
+                    // Check not already braced
+                    let beforeIdx = range.lowerBound
+                    if beforeIdx > result.startIndex {
+                        let charBefore = result[result.index(before: beforeIdx)]
+                        if charBefore == "{" { continue }
+                    }
+                    result.replaceSubrange(range, with: "{\(cleaned)}")
+                }
             }
         }
 
