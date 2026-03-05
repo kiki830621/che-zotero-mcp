@@ -88,7 +88,7 @@ claude mcp add --scope user --transport stdio -e ZOTERO_API_KEY=your_key che-zot
 
 Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable library read/write access)
 
-## Tools (32)
+## Tools (33)
 
 ### Zotero Library — Read (13)
 
@@ -108,7 +108,7 @@ Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable lib
 | `zotero_get_notes` | Get notes attached to an item (plain text) |
 | `zotero_get_annotations` | Get PDF annotations (highlights, comments) |
 
-### Zotero Library — Write (7, requires `ZOTERO_API_KEY`)
+### Zotero Library — Write (8, requires `ZOTERO_API_KEY`)
 
 | Tool | Description |
 |------|-------------|
@@ -119,6 +119,7 @@ Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable lib
 | `zotero_delete_item` | Delete an item by key |
 | `zotero_delete_collection` | Delete a collection container (items inside preserved) |
 | `zotero_normalize_titles` | Batch Title Case → sentence case with proper noun preservation (dry_run supported) |
+| `zotero_find_duplicates` | Detect and merge duplicate items (scan → confirm → merge workflow) |
 
 ### Academic Search & Analysis (6)
 
@@ -218,6 +219,7 @@ Each tool connects to one of three data sources. Understanding this helps troubl
 | `zotero_to_biblatex_apa` | Local SQLite | Converts items to biblatex-apa .bib format |
 | `zotero_to_apa` | Local SQLite | Converts items to APA 7 formatted text |
 | `zotero_normalize_titles` | Local SQLite + Zotero Web API | Reads local, writes via API |
+| `zotero_find_duplicates` | Local SQLite + Zotero Web API | Scan reads local, merge writes via API |
 | `zotero_set_config` | Local file | `~/.che-zotero-mcp/config.json` |
 | `zotero_get_config` | Local file | `~/.che-zotero-mcp/config.json` |
 
@@ -237,6 +239,7 @@ Each tool connects to one of three data sources. Understanding this helps troubl
 
 | Version | Changes |
 |---------|---------|
+| v1.9.0 | Duplicate detection and merge: `zotero_find_duplicates` (scan → confirm → merge), 3-tier confidence (DOI/title+author/title-only), intelligent primary selection |
 | v1.8.0 | Title normalization: `zotero_normalize_titles` (batch Title Case → sentence case), proper noun list (~500 terms), sentence case detection heuristic, enhanced `protectProperNouns` |
 | v1.7.0 | Citation formatting: `zotero_to_biblatex_apa` (biblatex-apa .bib), `zotero_to_apa` (APA 7 text). All Zotero fields exposed. |
 | v1.6.0 | 11-dimension similarity vector with graph-theoretic metrics, `zotero_delete_collection`, co-citation bug fix |

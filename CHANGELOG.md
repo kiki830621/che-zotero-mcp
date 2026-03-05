@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.0] - 2026-03-05
+
+### Added
+- **New tool: `zotero_find_duplicates`** — Detect and merge duplicate items in your Zotero library. Two-step workflow: (1) `action='scan'` scans library/collection for duplicates, grouped by confidence level: HIGH (same DOI), MEDIUM (similar title + author/year, Jaccard >= 0.85), LOW (near-identical title only, Jaccard >= 0.95). Returns groups with recommended item to keep based on item type priority, field completeness, and recency. (2) `action='merge'` merges specific duplicates: keeps the primary item, unions tags/collections from all duplicates, fills missing fields from secondaries, and deletes the inferior copies via Zotero Web API.
+- **`DuplicateDetector.swift`** — Duplicate detection engine with three-tier confidence system, word-level Jaccard title similarity, author overlap detection, year matching, and intelligent primary selection (journalArticle > book > conferencePaper > preprint > ..., then completeness score, then recency).
+
+### Changed
+- Version bump: 1.8.0 → 1.9.0
+- Tool count: 32 → 33 (write tools: 7 → 8)
+
 ## [1.8.0] - 2026-03-05
 
 ### Added

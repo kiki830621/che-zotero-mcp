@@ -29,7 +29,7 @@ public class CheZoteroMCPServer {
 
         server = Server(
             name: "che-zotero-mcp",
-            version: "1.8.0",
+            version: "1.9.0",
             capabilities: .init(tools: .init())
         )
 
@@ -665,6 +665,39 @@ public class CheZoteroMCPServer {
                         "required": .array([])
                     ])
                 ),
+                Tool(
+                    name: "zotero_find_duplicates",
+                    description: "[YOUR LIBRARY · WRITE] Detect and merge duplicate items. Two actions: (1) action='scan' — scan library/collection for duplicates, grouped by confidence: HIGH (same DOI), MEDIUM (similar title + author/year), LOW (near-identical title only). Returns groups with recommended item to keep. (2) action='merge' — merge specific duplicates: keep_key survives with merged tags/collections/fields, delete_keys are removed. Always scan first, confirm with user, then merge.",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "action": .object([
+                                "type": .string("string"),
+                                "enum": .array([.string("scan"), .string("merge")]),
+                                "description": .string("'scan' to find duplicates, 'merge' to combine items")
+                            ]),
+                            "collection_key": .object([
+                                "type": .string("string"),
+                                "description": .string("Scan within a specific collection (optional, default: entire library)")
+                            ]),
+                            "item_keys": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("string")]),
+                                "description": .string("Scan specific items only (optional)")
+                            ]),
+                            "keep_key": .object([
+                                "type": .string("string"),
+                                "description": .string("For merge: item key to keep (receives merged tags/collections/fields)")
+                            ]),
+                            "delete_keys": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("string")]),
+                                "description": .string("For merge: item keys to merge into keep_key and then delete")
+                            ])
+                        ]),
+                        "required": .array([.string("action")])
+                    ])
+                ),
             ])
         }
 
@@ -767,6 +800,8 @@ public class CheZoteroMCPServer {
                 return try await handleDeleteCollection(params)
             case "zotero_normalize_titles":
                 return try await handleNormalizeTitles(params)
+            case "zotero_find_duplicates":
+                return try await handleFindDuplicates(params)
 
             default:
                 return CallTool.Result(content: [.text("Unknown tool: \(params.name)")], isError: true)
