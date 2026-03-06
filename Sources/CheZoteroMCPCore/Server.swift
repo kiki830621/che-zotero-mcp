@@ -29,7 +29,7 @@ public class CheZoteroMCPServer {
 
         server = Server(
             name: "che-zotero-mcp",
-            version: "1.12.0",
+            version: "1.13.0",
             capabilities: .init(tools: .init())
         )
 

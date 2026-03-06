@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.13.0] - 2026-03-06
+
+### Added
+- **Crossref REST API** as DOI resolver fallback — directly queries Crossref database for metadata when doi.org content negotiation fails. Covers all Crossref-registered publishers (IEEE, ACM, Elsevier, Springer, Wiley, etc.). Fixes IEEE conference papers (e.g., IJCNN, ICTAI) returning "Paper not found" from `academic_lookup_doi`.
+- New `resolveViaCrossref(doi:)` method in `DOIResolver.swift` with Crossref JSON → `ResolvedDOIMetadata` conversion
+- New `mapCrossrefType(_:)` for Crossref-specific types (`proceedings-article`, `monograph`, `edited-book`, `reference-entry`, `peer-review`)
+- Automatic JATS XML tag stripping from Crossref abstracts
+- Polite pool User-Agent with `mailto:` for higher Crossref rate limits (50 req/s vs 1 req/s)
+
+### Changed
+- DOI resolution cascade: doi.org → **Crossref REST API** → OpenAlex → Airiti DOI (was: doi.org → OpenAlex → Airiti)
+- Updated User-Agent version in DOI resolvers from 1.3.2 → 1.13.0
+- Version bump: 1.12.0 → 1.13.0
+
 ## [1.12.0] - 2026-03-06
 
 ### Added

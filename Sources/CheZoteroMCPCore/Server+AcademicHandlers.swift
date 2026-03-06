@@ -30,7 +30,7 @@ extension CheZoteroMCPServer {
         // 1. DOIResolver (credibility-first: doi.org → OpenAlex → Airiti)
         guard let resolved = try? await doiResolver.resolve(doi: doi) else {
             return CallTool.Result(
-                content: [.text("Paper not found for DOI: \(doi). Tried doi.org, OpenAlex, and Airiti DOI.")],
+                content: [.text("Paper not found for DOI: \(doi). Tried doi.org, Crossref, OpenAlex, and Airiti DOI.")],
                 isError: false
             )
         }

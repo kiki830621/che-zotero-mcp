@@ -245,6 +245,7 @@ Each tool connects to one of three data sources. Understanding this helps troubl
 
 | Version | Changes |
 |---------|---------|
+| v1.13.0 | Crossref REST API fallback for DOI resolution — fixes IEEE/ACM papers returning "not found"; cascade: doi.org → Crossref → OpenAlex → Airiti |
 | v1.12.0 | My Publications management: `zotero_set_in_my_publications` — add/remove items from Zotero's built-in "My Publications" via `inPublications` flag |
 | v1.11.0 | Group library support: `zotero_list_groups` + optional `group_id` parameter on all read/write tools (local SQLite + Web API) |
 | v1.10.0 | File attachment upload: `zotero_add_attachment` — upload local PDF/EPUB/images to Zotero cloud via Web API file upload flow |

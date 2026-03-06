@@ -2,9 +2,10 @@
 //
 // Universal DOI metadata resolver with cascading fallback.
 // Supports all major DOI Registration Agencies:
-//   1. OpenAlex (250M+ academic works)
-//   2. doi.org content negotiation (Crossref, DataCite, mEDRA, JaLC, KISTI)
-//   3. data-doi.airiti.com (Taiwan academic publications)
+//   1. doi.org content negotiation (Crossref, DataCite, mEDRA, JaLC, KISTI)
+//   2. Crossref REST API (direct database query — covers IEEE, ACM, Elsevier, Springer, Wiley, etc.)
+//   3. OpenAlex (250M+ academic works)
+//   4. data-doi.airiti.com (Taiwan academic publications)
 //
 // Returns CSL-JSON compatible metadata that can be used to create Zotero items.
 
@@ -73,7 +74,7 @@ public class DOIResolver {
     }
 
     /// Resolve a DOI to metadata using cascading fallback (credibility-first).
-    /// Order: doi.org content negotiation (authoritative) → OpenAlex (rich) → Airiti DOI (Taiwan)
+    /// Order: doi.org → Crossref REST API → OpenAlex → Airiti DOI
     public func resolve(doi: String) async throws -> ResolvedDOIMetadata {
         let cleanDOI = cleanDOI(doi)
 
@@ -82,18 +83,23 @@ public class DOIResolver {
             return result
         }
 
-        // 2. Try OpenAlex (rich metadata but aggregated — may have disambiguation errors)
+        // 2. Try Crossref REST API (direct database query — works when publisher doesn't support content negotiation)
+        if let result = try? await resolveViaCrossref(doi: cleanDOI) {
+            return result
+        }
+
+        // 3. Try OpenAlex (rich metadata but aggregated — may have disambiguation errors)
         if let result = try? await resolveViaOpenAlex(doi: cleanDOI) {
             return result
         }
 
-        // 3. Try Airiti DOI (Taiwan academic publications)
+        // 4. Try Airiti DOI (Taiwan academic publications)
         if let result = try? await resolveViaAiriti(doi: cleanDOI) {
             return result
         }
 
-        // 4. All resolvers failed
-        throw DOIResolverError.notFound("Could not resolve metadata for DOI: \(cleanDOI). Tried doi.org, OpenAlex, and Airiti DOI.")
+        // 5. All resolvers failed
+        throw DOIResolverError.notFound("Could not resolve metadata for DOI: \(cleanDOI). Tried doi.org, Crossref, OpenAlex, and Airiti DOI.")
     }
 
     // MARK: - OpenAlex Resolver
@@ -135,7 +141,7 @@ public class DOIResolver {
         let url = URL(string: "https://doi.org/\(doi)")!
         var request = URLRequest(url: url)
         request.setValue("application/vnd.citationstyles.csl+json", forHTTPHeaderField: "Accept")
-        request.setValue("che-zotero-mcp/1.3.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("che-zotero-mcp/1.13.0", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
 
@@ -147,6 +153,98 @@ public class DOIResolver {
         return try parseCSLJSON(data: data, doi: doi, source: "doi.org")
     }
 
+    // MARK: - Crossref REST API Resolver
+
+    /// Resolve via Crossref REST API (direct database query).
+    /// Works for all Crossref-registered DOIs: IEEE, ACM, Elsevier, Springer, Wiley, etc.
+    /// Unlike doi.org content negotiation, this doesn't depend on the publisher's implementation.
+    private func resolveViaCrossref(doi: String) async throws -> ResolvedDOIMetadata? {
+        guard let encodedDOI = doi.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "https://api.crossref.org/works/\(encodedDOI)") else {
+            return nil
+        }
+        var request = URLRequest(url: url)
+        request.setValue("che-zotero-mcp/1.12.0 (mailto:che830621@icloud.com)", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            return nil
+        }
+
+        guard let wrapper = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let message = wrapper["message"] as? [String: Any] else {
+            return nil
+        }
+
+        // Title
+        let title = (message["title"] as? [String])?.first ?? "(untitled)"
+
+        // Authors
+        var creators: [ZoteroAPICreator] = []
+        if let authors = message["author"] as? [[String: Any]] {
+            for author in authors {
+                let given = author["given"] as? String
+                let family = author["family"] as? String
+                let name = author["name"] as? String
+
+                if let given = given, let family = family {
+                    creators.append(ZoteroAPICreator(firstName: given, lastName: family))
+                } else if let name = name {
+                    creators.append(ZoteroAPICreator(creatorType: "author", firstName: nil, lastName: nil, name: name))
+                } else if let family = family {
+                    creators.append(ZoteroAPICreator(firstName: nil, lastName: family))
+                }
+            }
+        }
+
+        // Date — try "published", fall back to "issued", then "created"
+        var date: String?
+        for dateKey in ["published", "issued", "created"] {
+            if let dateObj = message[dateKey] as? [String: Any],
+               let dateParts = dateObj["date-parts"] as? [[Any]],
+               let parts = dateParts.first, !parts.isEmpty {
+                let components = parts.compactMap { part -> String? in
+                    if let num = part as? Int { return String(num) }
+                    if let str = part as? String { return str }
+                    return nil
+                }
+                date = components.joined(separator: "-")
+                break
+            }
+        }
+
+        // Pages
+        let pages = message["page"] as? String
+
+        // Container title (journal / conference name)
+        let containerTitle = (message["container-title"] as? [String])?.first
+
+        // Abstract (Crossref may include JATS XML tags)
+        var abstractNote = message["abstract"] as? String
+        // Strip simple XML/JATS tags from abstract
+        if let abs = abstractNote {
+            abstractNote = abs.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return ResolvedDOIMetadata(
+            title: title,
+            creators: creators,
+            abstractNote: abstractNote,
+            publicationTitle: containerTitle,
+            date: date,
+            doi: (message["DOI"] as? String) ?? doi,
+            url: message["URL"] as? String,
+            volume: message["volume"] as? String,
+            issue: message["issue"] as? String,
+            pages: pages,
+            itemType: mapCrossrefType(message["type"] as? String),
+            source: "Crossref"
+        )
+    }
+
     // MARK: - Airiti DOI Resolver
 
     /// Resolve via Airiti's DOI metadata service (Taiwan publications).
@@ -154,7 +252,7 @@ public class DOIResolver {
         let url = URL(string: "http://data-doi.airiti.com/\(doi)")!
         var request = URLRequest(url: url)
         request.setValue("application/vnd.citationstyles.csl+json", forHTTPHeaderField: "Accept")
-        request.setValue("che-zotero-mcp/1.3.2", forHTTPHeaderField: "User-Agent")
+        request.setValue("che-zotero-mcp/1.13.0", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
 
@@ -259,6 +357,25 @@ public class DOIResolver {
         case "preprint", "posted-content": return "preprint"
         case "report": return "report"
         case "dataset": return "document"
+        default: return "journalArticle"
+        }
+    }
+
+    /// Map Crossref type to Zotero itemType.
+    private func mapCrossrefType(_ type: String?) -> String {
+        switch type {
+        case "journal-article": return "journalArticle"
+        case "book": return "book"
+        case "book-chapter": return "bookSection"
+        case "proceedings-article": return "conferencePaper"
+        case "dissertation": return "thesis"
+        case "posted-content": return "preprint"
+        case "report": return "report"
+        case "dataset": return "document"
+        case "monograph": return "book"
+        case "edited-book": return "book"
+        case "reference-entry": return "encyclopediaArticle"
+        case "peer-review": return "journalArticle"
         default: return "journalArticle"
         }
     }
