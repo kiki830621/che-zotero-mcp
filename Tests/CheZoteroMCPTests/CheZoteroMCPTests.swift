@@ -183,6 +183,7 @@ final class ZoteroReaderTests: XCTestCase {
             itemType: "journalArticle",
             title: "Test Title",
             creators: ["John Doe", "Jane Smith"],
+            creatorDetails: [],
             abstractNote: "This is an abstract.",
             date: "2024",
             publicationTitle: "Test Journal",
@@ -191,7 +192,8 @@ final class ZoteroReaderTests: XCTestCase {
             tags: ["tag1", "tag2"],
             collections: [],
             dateAdded: "2024-01-01",
-            dateModified: "2024-01-01"
+            dateModified: "2024-01-01",
+            allFields: [:]
         )
 
         let text = item.searchableText
