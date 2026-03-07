@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.16.0] - 2026-03-07
+
+### Added
+- **New tool: `resolve_references`** — Resolve partial reference metadata (title, authors, year, journal, ISSN, etc.) to DOIs. Uses a cascading strategy: direct DOI > PMID (PubMed API) > arXiv ID > ISSN+title (CrossRef filtered) > title+author (CrossRef title search) > title+author (CrossRef bibliographic) > title (OpenAlex). Returns three categories: `resolved` (1 high-confidence match), `ambiguous` (2+ candidates for user selection), `unresolved` (no match found). Ideal for identifying publications extracted from CVs or bibliographies.
+- **New import source: `import_publications_to_zotero(source='references')`** — One-call bibliography import pipeline. Accepts an array of reference objects with partial metadata (title, authors, year, journal, ISSN, etc.). Internally runs `ReferenceResolver` to find DOIs, then: (1) imports resolved items via DOI with full metadata, (2) creates Zotero items from raw metadata for unresolved items, (3) reports ambiguous items for manual disambiguation. Supports `dry_run`, `skip_existing`, `tags`, and `collection_key`.
+- **New import source: `import_publications_to_zotero(source='cv')`** — CV-specific import pipeline with author validation. Requires `author_name` parameter to filter out false positives (papers not authored by the CV owner). Optionally cross-references ORCID publications (`orcid_id`) for higher accuracy before falling back to CrossRef/OpenAlex. Publications that pass DOI resolution but fail author validation are demoted to metadata-only import with a warning.
+- **`ReferenceResolver.swift`** — Core reverse-lookup engine with CrossRef API integration (`query.title`, `query.author`, `query.bibliographic`, ISSN filter), OpenAlex fallback, PubMed PMID→DOI conversion, and arXiv ID→DOI construction. Includes word-level Jaccard title similarity scoring, author last-name matching, year proximity scoring, and automatic deduplication of same-title candidates.
+- **`Server+ReferenceHandlers.swift`** — Handlers for `resolve_references`, `source='references'`, and `source='cv'` import flows.
+
+### Changed
+- `import_publications_to_zotero` now supports 5 sources: `orcid`, `openalex_orcid`, `dois`, `references`, `cv` (was 3)
+- Tool count: 36 → 37
+- Version bump: 1.15.0 → 1.16.0
+
 ## [1.15.0] - 2026-03-06
 
 ### Added

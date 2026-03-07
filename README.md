@@ -88,7 +88,7 @@ claude mcp add --scope user --transport stdio -e ZOTERO_API_KEY=your_key che-zot
 
 Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable library read/write access)
 
-## Tools (35)
+## Tools (37)
 
 ### Zotero Library — Read (14)
 
@@ -137,14 +137,30 @@ Get your Zotero API key at: https://www.zotero.org/settings/keys/new (enable lib
 | `academic_search_author` | Search papers by author (ORCID > Author ID > name) |
 | `academic_compare_papers` | 11-dimension similarity vector (semantic, bib coupling, Adamic-Adar, RA, HPI, HDI, co-citation, author, venue, tags, shortest path) |
 
-### Publication Import (2)
+### Publication Import & Reference Resolution (3)
 
 | Tool | Description |
 |------|-------------|
 | `orcid_get_publications` | Fetch public publications from an ORCID ID |
-| `import_publications_to_zotero` | Batch import from ORCID, OpenAlex, or DOI list (dry-run supported) |
+| `import_publications_to_zotero` | Batch import from ORCID, OpenAlex, DOI list, or reference metadata (dry-run supported) |
+| `resolve_references` | Resolve partial reference metadata (title, authors, year, ISSN) to DOIs via CrossRef + OpenAlex |
 
-DOI resolution uses credibility-first cascading fallback: doi.org (publisher-submitted) → OpenAlex (aggregated) → Airiti DOI (regional), covering all 12 global DOI Registration Agencies.
+DOI resolution uses credibility-first cascading fallback: doi.org (publisher-submitted) → Crossref REST API → OpenAlex (aggregated) → Airiti DOI (regional), covering all 12 global DOI Registration Agencies.
+
+#### CV / Bibliography Import
+
+Import publications from CVs, reference lists, or any unstructured source:
+
+```
+AI reads CV PDF → extracts references → import_publications_to_zotero(source='references', references=[...])
+```
+
+- **Has DOI** → imported with full metadata (abstract, citations, etc.)
+- **No DOI but has title+author** → CrossRef/OpenAlex reverse lookup finds the DOI
+- **Truly no DOI** → created from raw metadata (title, authors, year, journal)
+- **Ambiguous matches** → skipped with suggestions for manual disambiguation
+
+`resolve_references` can be used standalone for preview before importing. `import_publications_to_zotero(source='references')` combines resolve + import in one call.
 
 ### Citation Formatting (1)
 
@@ -221,7 +237,8 @@ Each tool connects to one of three data sources. Understanding this helps troubl
 | `academic_get_references` | OpenAlex API | Backward references |
 | `academic_search_author` | OpenAlex API | Search by author name |
 | `orcid_get_publications` | ORCID API | Public publications |
-| `import_publications_to_zotero` | OpenAlex + Zotero Web API | Batch import with dedup |
+| `import_publications_to_zotero` | CrossRef + OpenAlex + Zotero Web API | Batch import with dedup; source='references' adds CrossRef reverse lookup |
+| `resolve_references` | CrossRef + OpenAlex + PubMed | Reverse lookup: metadata → DOI |
 | `academic_compare_papers` | OpenAlex API + Local SQLite | Graph metrics + embeddings |
 | `zotero_to_apa` | Local SQLite | Converts items to APA 7 formatted text |
 | `zotero_normalize_titles` | Local SQLite + Zotero Web API | Reads local, writes via API |
@@ -245,6 +262,7 @@ Each tool connects to one of three data sources. Understanding this helps troubl
 
 | Version | Changes |
 |---------|---------|
+| v1.16.0 | Reference resolution and CV import: `resolve_references` (reverse DOI lookup via CrossRef + OpenAlex + PubMed), `import_publications_to_zotero(source='references')` for one-call CV/bibliography import |
 | v1.14.0 | Remove `zotero_to_biblatex_apa` — biblatex-apa .bib export moved to `che-biblatex-mcp` (`bib_normalize`) for proper LaTeX-aware parsing |
 | v1.13.0 | Crossref REST API fallback for DOI resolution — fixes IEEE/ACM papers returning "not found"; cascade: doi.org → Crossref → OpenAlex → Airiti |
 | v1.12.0 | My Publications management: `zotero_set_in_my_publications` — add/remove items from Zotero's built-in "My Publications" via `inPublications` flag |

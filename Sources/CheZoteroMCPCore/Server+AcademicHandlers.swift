@@ -224,8 +224,16 @@ extension CheZoteroMCPServer {
             dois = doisParam
             sourceDescription = "Manual DOI list (\(dois.count) DOIs)"
 
+        case "references":
+            // Delegate to the dedicated references import handler
+            return try await handleImportFromReferences(params)
+
+        case "cv":
+            // Delegate to the dedicated CV import handler
+            return try await handleImportFromCV(params)
+
         default:
-            return CallTool.Result(content: [.text("Unknown source: '\(source)'. Use 'orcid', 'openalex_orcid', or 'dois'.")], isError: true)
+            return CallTool.Result(content: [.text("Unknown source: '\(source)'. Use 'orcid', 'openalex_orcid', 'dois', 'references', or 'cv'.")], isError: true)
         }
 
         if dois.isEmpty {

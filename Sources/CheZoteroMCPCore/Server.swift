@@ -29,7 +29,7 @@ public class CheZoteroMCPServer {
 
         server = Server(
             name: "che-zotero-mcp",
-            version: "1.15.0",
+            version: "1.16.0",
             capabilities: .init(tools: .init())
         )
 
@@ -347,23 +347,48 @@ public class CheZoteroMCPServer {
             ),
             Tool(
                 name: "import_publications_to_zotero",
-                description: "[BRIDGE: EXTERNAL → YOUR LIBRARY] Batch import publications into Zotero from external sources. Sources: 'orcid' (authoritative, user-curated — recommended for 'my publications'), 'openalex_orcid' (broader discovery via OpenAlex, may include false positives from name disambiguation), 'dois' (manual DOI list). Resolves metadata via DOIResolver cascade (OpenAlex → doi.org → Airiti). Supports dry_run preview and skip_existing to avoid duplicates.",
+                description: "[BRIDGE: EXTERNAL → YOUR LIBRARY] Batch import publications into Zotero from external sources. Sources: 'orcid' (authoritative, user-curated), 'openalex_orcid' (broader discovery via OpenAlex), 'dois' (manual DOI list), 'references' (from partial metadata — ideal for CV/bibliography import: resolves DOIs when possible, creates items from raw metadata when not). Supports dry_run preview and skip_existing to avoid duplicates.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
                         "source": .object([
                             "type": .string("string"),
-                            "enum": .array([.string("orcid"), .string("openalex_orcid"), .string("dois")]),
-                            "description": .string("Import source: 'orcid' (user-curated, most accurate), 'openalex_orcid' (broader but may have false positives), 'dois' (manual DOI list)")
+                            "enum": .array([.string("orcid"), .string("openalex_orcid"), .string("dois"), .string("references"), .string("cv")]),
+                            "description": .string("Import source: 'orcid' (user-curated, most accurate), 'openalex_orcid' (broader but may have false positives), 'dois' (manual DOI list), 'references' (from any reference list), 'cv' (from a person's CV — validates all results against the CV author, optionally cross-references ORCID)")
                         ]),
                         "orcid_id": .object([
                             "type": .string("string"),
-                            "description": .string("ORCID ID — required for 'orcid' and 'openalex_orcid' sources")
+                            "description": .string("ORCID ID — required for 'orcid' and 'openalex_orcid' sources; optional for 'cv' source (cross-references ORCID publications for higher accuracy)")
+                        ]),
+                        "author_name": .object([
+                            "type": .string("string"),
+                            "description": .string("CV author's name — required for 'cv' source. Used to validate that resolved papers actually include this person as author.")
                         ]),
                         "dois": .object([
                             "type": .string("array"),
                             "items": .object(["type": .string("string")]),
                             "description": .string("List of DOIs — required for 'dois' source")
+                        ]),
+                        "references": .object([
+                            "type": .string("array"),
+                            "description": .string("Array of reference objects — required for 'references' source. Each should have at least 'title'. Fields: title, authors (array), year, journal, doi, pmid, arxiv_id, isbn, issn, volume, issue, pages"),
+                            "items": .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "title": .object(["type": .string("string")]),
+                                    "authors": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+                                    "year": .object(["type": .string("integer")]),
+                                    "journal": .object(["type": .string("string")]),
+                                    "doi": .object(["type": .string("string")]),
+                                    "pmid": .object(["type": .string("string")]),
+                                    "arxiv_id": .object(["type": .string("string")]),
+                                    "isbn": .object(["type": .string("string")]),
+                                    "issn": .object(["type": .string("string")]),
+                                    "volume": .object(["type": .string("string")]),
+                                    "issue": .object(["type": .string("string")]),
+                                    "pages": .object(["type": .string("string")])
+                                ])
+                            ])
                         ]),
                         "collection_key": .object([
                             "type": .string("string"),
@@ -384,6 +409,39 @@ public class CheZoteroMCPServer {
                         ])
                     ]),
                     "required": .array([.string("source")])
+                ])
+            ),
+
+            // --- Reference Resolution (1) ---
+            Tool(
+                name: "resolve_references",
+                description: "[EXTERNAL DATABASE] Resolve partial reference metadata (title, authors, year, journal, ISSN, etc.) to DOIs. Searches CrossRef and OpenAlex using a cascade strategy: DOI > PMID > arXiv ID > ISSN+title > title+author > title-only. Returns three categories: 'resolved' (1 high-confidence match with DOI), 'ambiguous' (2+ candidates — user must pick), 'unresolved' (no match found). Use resolved DOIs with import_publications_to_zotero(source='dois') to import. Ideal for importing publications extracted from CVs, bibliographies, or reference lists.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "references": .object([
+                            "type": .string("array"),
+                            "description": .string("Array of reference objects. Each should have at least 'title'. More fields improve accuracy."),
+                            "items": .object([
+                                "type": .string("object"),
+                                "properties": .object([
+                                    "title": .object(["type": .string("string"), "description": .string("Publication title")]),
+                                    "authors": .object(["type": .string("array"), "items": .object(["type": .string("string")]), "description": .string("Author names (e.g. ['John Smith', 'Jane Doe'])")]),
+                                    "year": .object(["type": .string("integer"), "description": .string("Publication year")]),
+                                    "journal": .object(["type": .string("string"), "description": .string("Journal or conference name")]),
+                                    "doi": .object(["type": .string("string"), "description": .string("DOI if already known (will skip search)")]),
+                                    "pmid": .object(["type": .string("string"), "description": .string("PubMed ID")]),
+                                    "arxiv_id": .object(["type": .string("string"), "description": .string("arXiv ID (e.g. '2301.12345')")]),
+                                    "isbn": .object(["type": .string("string"), "description": .string("ISBN for books")]),
+                                    "issn": .object(["type": .string("string"), "description": .string("ISSN of the journal — combined with title for precise CrossRef lookup")]),
+                                    "volume": .object(["type": .string("string"), "description": .string("Volume number")]),
+                                    "issue": .object(["type": .string("string"), "description": .string("Issue number")]),
+                                    "pages": .object(["type": .string("string"), "description": .string("Page range")])
+                                ])
+                            ])
+                        ])
+                    ]),
+                    "required": .array([.string("references")])
                 ])
             ),
 
@@ -848,6 +906,8 @@ public class CheZoteroMCPServer {
                 return try await handleOrcidGetPublications(params)
             case "import_publications_to_zotero":
                 return try await handleImportPublications(params)
+            case "resolve_references":
+                return try await handleResolveReferences(params)
 
             // Notes & Annotations
             case "zotero_get_notes":
